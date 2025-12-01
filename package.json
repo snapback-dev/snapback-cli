@@ -1,0 +1,74 @@
+{
+  "name": "@snapback/cli",
+  "version": "0.1.1",
+  "description": "CLI tool for managing SnapBack snapshots and file protection",
+  "homepage": "https://snapback.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/snapback.git",
+    "directory": "apps/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/snapback/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "SnapBack Team",
+    "url": "https://snapback.dev"
+  },
+  "keywords": [
+    "snapback",
+    "cli",
+    "file-protection",
+    "snapshots",
+    "backup"
+  ],
+  "bin": {
+    "snapback": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@inquirer/prompts": "catalog:",
+    "@snapback/contracts": "workspace:*",
+    "@snapback/core": "workspace:*",
+    "@snapback/sdk": "workspace:*",
+    "chalk": "catalog:",
+    "commander": "catalog:",
+    "esprima": "catalog:",
+    "ora": "catalog:"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "biome check .",
+    "dev": "tsup --watch",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --fix .",
+    "prepublishOnly": "pnpm run build && pnpm run test",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=8.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
