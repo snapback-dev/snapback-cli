@@ -2,7 +2,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { ApiClient } from "./services/api-client.js";
+import { ApiClient } from "./services/api-client";
 
 interface CheckOptions {
 	staged?: boolean;
