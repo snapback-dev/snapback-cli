@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiClient } from "../../../src/services/api-client";
+import { ApiClient } from "@cli/services/api-client";
 
 // Mock the fetch API
 const mockFetch = vi.fn();
