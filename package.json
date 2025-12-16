@@ -35,6 +35,7 @@
     "@inquirer/prompts": "catalog:",
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
+    "@snapback/engine": "workspace:*",
     "@snapback/sdk": "workspace:*",
     "chalk": "catalog:",
     "commander": "catalog:",

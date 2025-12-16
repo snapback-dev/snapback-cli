@@ -2,6 +2,7 @@
 
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { CLIEngineAdapter } from "@snapback/engine/transports/cli";
 import { ApiClient } from "./services/api-client";
 
 interface CheckOptions {
@@ -164,48 +165,71 @@ async function analyzeFilesWithAPI(files: string[], apiClient: ApiClient): Promi
 	return findings;
 }
 
-// Basic pattern detection for offline fallback
+// Engine-based pattern detection for offline fallback (uses SnapBack engine)
 async function analyzeFilesWithBasicPatterns(files: string[]): Promise<GuardianFinding[]> {
 	const findings: GuardianFinding[] = [];
 
-	for (const file of files) {
-		try {
-			if (existsSync(file)) {
-				const content = readFileSync(file, "utf-8");
+	try {
+		// Use CLIEngineAdapter for robust offline analysis
+		const engineAdapter = new CLIEngineAdapter();
+		const filesForAnalysis = files
+			.filter((file) => existsSync(file))
+			.map((file) => ({
+				path: file,
+				content: readFileSync(file, "utf-8"),
+			}));
 
-				// Simple pattern detection for basic security issues
-				const factors: string[] = [];
-				const recommendations: string[] = [];
+		if (filesForAnalysis.length === 0) {
+			return findings;
+		}
 
-				// Check for common patterns
-				if (content.includes("eval(")) {
-					factors.push("eval() usage detected - security risk");
-					recommendations.push("Avoid using eval() as it can execute arbitrary code");
-				}
+		const result = await engineAdapter.analyze({
+			files: filesForAnalysis,
+			format: "json",
+		});
 
-				if (content.includes("Function(")) {
-					factors.push("Function constructor usage detected - security risk");
-					recommendations.push("Avoid using Function constructor as it can execute arbitrary code");
-				}
-
-				// Score calculation based on number of risk factors (0-10 scale)
-				// Each additional factor increases score non-linearly to catch issues earlier
-				const score = factors.length > 0 ? Math.min(factors.length * 3, 10) : 0;
-				const severity = factors.length > 0 ? (factors.length > 2 ? "high" : "medium") : "low";
-
-				if (score > 0) {
-					findings.push({
-						file,
-						line: 1,
-						risk: score,
-						severity,
-						message: factors.join(", "),
-						suggestions: recommendations,
-					});
-				}
+		// Convert engine result to findings
+		if (result.riskScore > 0) {
+			for (const file of filesForAnalysis) {
+				findings.push({
+					file: file.path,
+					line: 1,
+					risk: result.riskScore,
+					severity: result.riskLevel === "critical" || result.riskLevel === "high" ? "high" : "medium",
+					message: `Risk level: ${result.riskLevel} (${result.riskScore.toFixed(1)}/10)`,
+					suggestions: [],
+				});
 			}
-		} catch (error) {
-			console.warn(`Failed to analyze file ${file}:`, error);
+		}
+	} catch (error) {
+		console.warn("Engine analysis failed, using regex fallback:", error);
+		// Fallback to regex patterns if engine fails
+		for (const file of files) {
+			try {
+				if (existsSync(file)) {
+					const content = readFileSync(file, "utf-8");
+					const factors: string[] = [];
+					if (content.includes("eval(")) {
+						factors.push("eval() usage");
+					}
+					if (content.includes("Function(")) {
+						factors.push("Function constructor");
+					}
+					const score = factors.length > 0 ? Math.min(factors.length * 3, 10) : 0;
+					if (score > 0) {
+						findings.push({
+							file,
+							line: 1,
+							risk: score,
+							severity: factors.length > 2 ? "high" : "medium",
+							message: factors.join(", "),
+							suggestions: [],
+						});
+					}
+				}
+			} catch {
+				/* skip unreadable files */
+			}
 		}
 	}
 
