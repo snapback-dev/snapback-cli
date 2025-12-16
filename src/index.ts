@@ -3,10 +3,13 @@ import { join, relative, resolve } from "node:path";
 import { checkbox, confirm, input, search } from "@inquirer/prompts";
 import type { Snapshot, SnapshotStorage } from "@snapback/contracts";
 import { createSnapshotStorage } from "@snapback/contracts/types/snapshot";
-import { Guardian } from "@snapback/core";
+import { CLIEngineAdapter } from "@snapback/engine/transports/cli";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
+
+// V2 Engine adapter instance (replaces V1 Guardian)
+const engineAdapter = new CLIEngineAdapter();
 
 // Helper function to recursively get all files
 async function getAllFiles(dir: string, baseDir: string = dir): Promise<string[]> {
@@ -41,41 +44,53 @@ export function createCLI() {
 		.option("-a, --ast", "Use AST-based analysis for deeper insights")
 		.action(async (file) => {
 			try {
-				// Check if --ast flag was passed by examining process.argv
-				const astFlag = process.argv.includes("--ast") || process.argv.includes("-a");
-
 				const fullPath = resolve(process.cwd(), file);
 				const text = await readFile(fullPath, "utf-8");
 
 				const spinner = ora("Analyzing file...").start();
-				const g = new Guardian();
 
-				let risk: any;
-				if (astFlag) {
-					risk = await g.analyzeWithAST(text);
-				} else {
-					risk = await g.quickCheckDoc(text);
-				}
+				// Use V2 engine adapter for analysis
+				const result = await engineAdapter.analyze({
+					files: [{ path: file, content: text }],
+					format: "json",
+				});
 
 				spinner.succeed("Analysis complete");
-				console.log(chalk.cyan("Risk:"), risk);
 
-				// Provide detailed feedback based on risk factors
-				if (risk.factors.length > 0) {
-					console.log(chalk.yellow("\nRisk Factors:"));
-					risk.factors.forEach((factor: string) => {
-						console.log(chalk.yellow(`  ⚠ ${factor}`));
-					});
+				// Parse the JSON output if available
+				let riskData: {
+					riskScore: number;
+					riskLevel: string;
+					signals?: Array<{ signal: string; value: number }>;
+				};
+				try {
+					riskData = JSON.parse(result.output);
+				} catch {
+					riskData = { riskScore: result.riskScore, riskLevel: result.riskLevel };
 				}
 
-				// Provide recommendations
-				if (risk.score > 0.7) {
+				console.log(chalk.cyan("Risk Level:"), riskData.riskLevel.toUpperCase());
+				console.log(chalk.cyan("Risk Score:"), `${riskData.riskScore.toFixed(1)}/10`);
+
+				// Provide detailed feedback based on signals
+				if (riskData.signals && riskData.signals.length > 0) {
+					const activeSignals = riskData.signals.filter((s) => s.value > 0);
+					if (activeSignals.length > 0) {
+						console.log(chalk.yellow("\nRisk Factors:"));
+						activeSignals.forEach((signal) => {
+							console.log(chalk.yellow(`  ⚠ ${signal.signal}: ${signal.value.toFixed(1)}`));
+						});
+					}
+				}
+
+				// Provide recommendations based on risk level (V2 uses 0-10 scale)
+				if (riskData.riskScore > 7) {
 					console.log(
 						chalk.red(
 							"\nRecommendation: Consider creating a snapshot before proceeding with these changes.",
 						),
 					);
-				} else if (risk.score > 0.4) {
+				} else if (riskData.riskScore > 4) {
 					console.log(chalk.yellow("\nRecommendation: Review changes before proceeding."));
 				}
 			} catch (error: any) {
@@ -215,36 +230,51 @@ export function createCLI() {
 					spinner.text = `Analyzing ${codeFiles.length} files...`;
 				}
 
-				const g = new Guardian();
+				// Use V2 engine adapter for batch analysis
 				let hasRiskyChanges = false;
 				let riskCount = 0;
 
-				// Check each file for risks
+				// Check each file for risks using V2 engine
 				for (const file of codeFiles) {
 					try {
 						const fullPath = resolve(cwd, file);
 						const content = await readFile(fullPath, "utf-8");
 
-						// Quick check for AI risk patterns
-						const risk = await g.quickCheckDoc(content);
+						// Use V2 engine adapter for analysis
+						const result = await engineAdapter.analyze({
+							files: [{ path: file, content }],
+							format: "json",
+							quiet: options.quiet,
+						});
 
-						if (risk.score > 0.5) {
+						// V2 uses 0-10 scale, threshold of 5 = medium risk (equivalent to V1's 0.5)
+						if (result.riskScore > 5) {
 							hasRiskyChanges = true;
 							riskCount++;
 
 							if (!options.quiet) {
-								console.log(chalk.yellow(`⚠  Risk detected in ${file}: ${risk.score.toFixed(2)}`));
-								if (risk.factors.length > 0) {
-									risk.factors.forEach((factor: string) => {
-										console.log(chalk.gray(`   - ${factor}`));
-									});
+								console.log(
+									chalk.yellow(`\u26a0  Risk detected in ${file}: ${result.riskScore.toFixed(1)}/10`),
+								);
+								// Parse signals from output
+								try {
+									const data = JSON.parse(result.output);
+									if (data.signals) {
+										data.signals
+											.filter((s: { value: number }) => s.value > 0)
+											.forEach((s: { signal: string; value: number }) => {
+												console.log(chalk.gray(`   - ${s.signal}: ${s.value.toFixed(1)}`));
+											});
+									}
+								} catch {
+									// Output wasn't JSON, skip signal details
 								}
 							}
 						}
 					} catch (_error) {
 						// Skip files that can't be read or analyzed
 						if (!options.quiet) {
-							console.log(chalk.gray(`⚠  Could not analyze ${file}`));
+							console.log(chalk.gray(`\u26a0  Could not analyze ${file}`));
 						}
 					}
 				}
@@ -272,7 +302,9 @@ export function createCLI() {
 						}
 					} else if (!options.quiet) {
 						console.log(
-							chalk.yellow("\n💡 Recommendation: Consider creating a snapshot before committing"),
+							chalk.yellow(
+								"\n\ud83d\udca1 Recommendation: Consider creating a snapshot before committing",
+							),
 						);
 						console.log(chalk.gray("Run with --snapshot flag to automatically create a snapshot"));
 					}
@@ -313,44 +345,51 @@ async function interactiveAnalyze() {
 		},
 	});
 
-	const useAst = await confirm({
-		message: "Use AST-based analysis for deeper insights?",
-		default: false,
-	});
-
-	const answers = { file, ast: useAst };
+	// Note: AST option is now handled internally by V2 engine signals (complexity, cycles)
+	const answers = { file };
 
 	try {
 		const fullPath = resolve(process.cwd(), answers.file);
 		const text = await readFile(fullPath, "utf-8");
 
 		const spinner = ora("Analyzing file...").start();
-		const g = new Guardian();
 
-		let risk: any;
-		if (answers.ast) {
-			risk = await g.analyzeWithAST(text);
-		} else {
-			risk = await g.quickCheckDoc(text);
-		}
-
-		spinner.succeed("Analysis complete");
-		console.log(chalk.cyan("Risk:"), risk);
-
-		if (risk.factors.length > 0) {
-			console.log(chalk.yellow("\nRisk Factors:"));
-			risk.factors.forEach((factor: string) => {
-				console.log(chalk.yellow(`  ⚠ ${factor}`));
-			});
-		}
-
-		// Ask if user wants to create a snapshot
-		const createSnapshot = await confirm({
-			message: "Would you like to create a snapshot?",
-			default: risk.score > 0.5,
+		// Use V2 engine adapter for analysis
+		const result = await engineAdapter.analyze({
+			files: [{ path: answers.file, content: text }],
+			format: "json",
 		});
 
-		if (createSnapshot) {
+		spinner.succeed("Analysis complete");
+
+		// Parse and display results
+		let riskData: { riskScore: number; riskLevel: string; signals?: Array<{ signal: string; value: number }> };
+		try {
+			riskData = JSON.parse(result.output);
+		} catch {
+			riskData = { riskScore: result.riskScore, riskLevel: result.riskLevel };
+		}
+
+		console.log(chalk.cyan("Risk Level:"), riskData.riskLevel.toUpperCase());
+		console.log(chalk.cyan("Risk Score:"), `${riskData.riskScore.toFixed(1)}/10`);
+
+		if (riskData.signals && riskData.signals.length > 0) {
+			const activeSignals = riskData.signals.filter((s) => s.value > 0);
+			if (activeSignals.length > 0) {
+				console.log(chalk.yellow("\nRisk Factors:"));
+				activeSignals.forEach((signal) => {
+					console.log(chalk.yellow(`  ⚠ ${signal.signal}: ${signal.value.toFixed(1)}`));
+				});
+			}
+		}
+
+		// Ask if user wants to create a snapshot (V2 uses 0-10 scale, 5 = medium risk)
+		const createSnapshotPrompt = await confirm({
+			message: "Would you like to create a snapshot?",
+			default: riskData.riskScore > 5,
+		});
+
+		if (createSnapshotPrompt) {
 			await interactiveSnapshot({ files: [answers.file] });
 		}
 	} catch (error: any) {
