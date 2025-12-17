@@ -1,20 +1,21 @@
 import { resolve } from "node:path";
-import { defineConfig } from "vitest/config";
+import { mergeConfigs, nodeConfig } from "@snapback/vitest-config";
+import { defineProject } from "vitest/config";
 
-export default defineConfig({
-	resolve: {
-		alias: {
-			"@cli": resolve(__dirname, "./src"),
+/**
+ * Vitest configuration for apps/cli
+ * Uses shared nodeConfig preset from @snapback/vitest-config
+ */
+export default defineProject(
+	mergeConfigs(nodeConfig, {
+		resolve: {
+			alias: {
+				"@cli": resolve(__dirname, "./src"),
+			},
 		},
-	},
-	test: {
-		globals: true,
-		environment: "node",
-		include: ["test/**/*.{test,spec}.{ts,js}"],
-		coverage: {
-			provider: "v8",
-			reporter: ["text", "json", "html"],
-			exclude: ["node_modules/**", "dist/**", ".next/**", "**/*.config.*", "**/*.d.ts", "**/types/**"],
+		test: {
+			name: "@snapback/cli",
+			include: ["test/**/*.test.ts"],
 		},
-	},
-});
+	}),
+);
