@@ -7,10 +7,21 @@ import { CLIEngineAdapter } from "@snapback/engine/transports/cli";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
-
+// New CLI commands
+import {
+	createInitCommand,
+	createLearnCommand,
+	createLoginCommand,
+	createLogoutCommand,
+	createPatternsCommand,
+	createProtectCommand,
+	createSessionCommand,
+	createStatusCommand,
+	createToolsCommand,
+	createWhoamiCommand,
+} from "./commands";
 // CLI-UX-002: Git Client for staged files
 import { GitClient, GitNotInstalledError, GitNotRepositoryError, isCodeFile } from "./services/git-client";
-
 // CLI-UX-001, 003, 004: UX Utilities
 import {
 	createFileSummaryTable,
@@ -51,7 +62,37 @@ async function getAllFiles(dir: string, baseDir: string = dir): Promise<string[]
 
 export function createCLI() {
 	const program = new Command();
-	program.name("snapback").description("AI-safe code snapshots and risk analysis");
+	program.name("snapback").description("AI-safe code snapshots and risk analysis").alias("snap");
+
+	// =========================================================================
+	// NEW COMMANDS - Customer MCP System
+	// =======================================================================
+
+	// Auth commands
+	program.addCommand(createLoginCommand());
+	program.addCommand(createLogoutCommand());
+	program.addCommand(createWhoamiCommand());
+
+	// Workspace management
+	program.addCommand(createInitCommand());
+	program.addCommand(createStatusCommand());
+
+	// MCP tools configuration
+	program.addCommand(createToolsCommand());
+
+	// Protection management
+	program.addCommand(createProtectCommand());
+
+	// Session management
+	program.addCommand(createSessionCommand());
+
+	// Learning system
+	program.addCommand(createLearnCommand());
+	program.addCommand(createPatternsCommand());
+
+	// =========================================================================
+	// EXISTING COMMANDS
+	// =========================================================================
 
 	program
 		.command("analyze <file>")
