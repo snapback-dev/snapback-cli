@@ -2,8 +2,10 @@
 	"extends": "@snapback/tsconfig/cli",
 	"compilerOptions": {
 		"sourceMap": true,
-		"rootDir": "src"
+		"rootDir": "src",
+		"declaration": true,
+		"declarationMap": true
 	},
 	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules", "dist", "build", "src/**/*.js", "src/**/*.d.ts"]
+	"exclude": ["node_modules", "dist", "build", "src/**/*.js"]
 }

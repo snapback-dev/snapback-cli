@@ -56,7 +56,7 @@
     "vitest": "catalog:"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsc --build tsconfig.build.json --emitDeclarationOnly",
     "check": "biome check .",
     "dev": "tsup --watch",
     "format": "biome format --write .",
