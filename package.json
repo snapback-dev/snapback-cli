@@ -39,6 +39,7 @@
     "@snapback/sdk": "workspace:*",
     "boxen": "catalog:",
     "chalk": "catalog:",
+        "chokidar": "catalog:",
     "cli-table3": "catalog:",
     "commander": "catalog:",
     "conf": "catalog:",

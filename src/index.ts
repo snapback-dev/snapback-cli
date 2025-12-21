@@ -18,6 +18,7 @@ import {
 	createSessionCommand,
 	createStatusCommand,
 	createToolsCommand,
+	createWatchCommand,
 	createWhoamiCommand,
 } from "./commands";
 // CLI-UX-002: Git Client for staged files
@@ -89,6 +90,9 @@ export function createCLI() {
 	// Learning system
 	program.addCommand(createLearnCommand());
 	program.addCommand(createPatternsCommand());
+
+	// Continuous watching
+	program.addCommand(createWatchCommand());
 
 	// =========================================================================
 	// EXISTING COMMANDS

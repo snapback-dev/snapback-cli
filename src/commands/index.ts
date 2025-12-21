@@ -12,3 +12,4 @@ export { createProtectCommand } from "./protect";
 export { createSessionCommand } from "./session";
 export { createStatusCommand } from "./status";
 export { createToolsCommand } from "./tools";
+export { createWatchCommand } from "./watch";
