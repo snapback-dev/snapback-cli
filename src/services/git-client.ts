@@ -4,17 +4,14 @@
  * Provides git operations for staged files detection, content retrieval,
  * and diff display. Fixes the `check` command to analyze staged files only.
  *
- * @see ../resources/cli_ux_implementation/02-execa-git-client.md
+ * @see ai_dev_utils/resources/new_cli/02-execa-integration.spec.md
  */
-
-// TODO: Add dependency - pnpm add execa@^9.5.2
 
 import { execa } from "execa";
 
 // =============================================================================
 // TYPES
 // =============================================================================
-// TODO: Copy from 02-execa-git-client.md lines 71-90
 
 export interface GitClientOptions {
 	cwd?: string;
@@ -37,7 +34,6 @@ export interface DiffHunk {
 // =============================================================================
 // CUSTOM ERRORS
 // =============================================================================
-// TODO: Copy from 02-execa-git-client.md lines 268-285
 
 export class GitNotInstalledError extends Error {
 	constructor() {
@@ -63,7 +59,6 @@ export class GitBinaryFileError extends Error {
 // =============================================================================
 // GIT CLIENT CLASS
 // =============================================================================
-// TODO: Copy GitClient class from 02-execa-git-client.md lines 92-270
 
 export class GitClient {
 	private cwd: string;
@@ -76,10 +71,8 @@ export class GitClient {
 
 	/**
 	 * Check if git is installed
-	 * @see 02-execa-git-client.md lines 102-110
 	 */
 	async isGitInstalled(): Promise<boolean> {
-		// TODO: Copy implementation from spec lines 102-110
 		try {
 			await execa("git", ["--version"], { timeout: 5000 });
 			return true;
@@ -90,10 +83,8 @@ export class GitClient {
 
 	/**
 	 * Check if cwd is inside a git repository
-	 * @see 02-execa-git-client.md lines 115-125
 	 */
 	async isGitRepository(): Promise<boolean> {
-		// TODO: Copy implementation from spec lines 115-125
 		try {
 			await execa("git", ["rev-parse", "--is-inside-work-tree"], {
 				cwd: this.cwd,
@@ -107,10 +98,8 @@ export class GitClient {
 
 	/**
 	 * Get repository root path
-	 * @see 02-execa-git-client.md lines 130-137
 	 */
 	async getRepositoryRoot(): Promise<string> {
-		// TODO: Copy implementation from spec lines 130-137
 		const { stdout } = await execa("git", ["rev-parse", "--show-toplevel"], {
 			cwd: this.cwd,
 			timeout: this.timeout,
@@ -120,10 +109,8 @@ export class GitClient {
 
 	/**
 	 * Get list of staged files with their status
-	 * @see 02-execa-git-client.md lines 142-170
 	 */
 	async getStagedFiles(): Promise<StagedFile[]> {
-		// TODO: Copy implementation from spec lines 142-170
 		try {
 			const { stdout } = await execa("git", ["diff", "--cached", "--name-status"], {
 				cwd: this.cwd,
@@ -148,10 +135,8 @@ export class GitClient {
 
 	/**
 	 * Get staged file content (what will be committed)
-	 * @see 02-execa-git-client.md lines 175-188
 	 */
 	async getStagedContent(filePath: string): Promise<string> {
-		// TODO: Copy implementation from spec lines 175-188
 		try {
 			const { stdout } = await execa("git", ["show", `:${filePath}`], {
 				cwd: this.cwd,
@@ -168,10 +153,8 @@ export class GitClient {
 
 	/**
 	 * Get diff of staged changes for a file
-	 * @see 02-execa-git-client.md lines 193-205
 	 */
 	async getStagedDiff(filePath?: string): Promise<string> {
-		// TODO: Copy implementation from spec lines 193-205
 		const args = ["diff", "--cached", "--color=always"];
 		if (filePath) {
 			args.push("--", filePath);
@@ -186,10 +169,8 @@ export class GitClient {
 
 	/**
 	 * Get diff statistics
-	 * @see 02-execa-git-client.md lines 210-230
 	 */
 	async getStagedStats(): Promise<{ additions: number; deletions: number; files: number }> {
-		// TODO: Copy implementation from spec lines 210-230
 		const { stdout } = await execa("git", ["diff", "--cached", "--numstat"], {
 			cwd: this.cwd,
 			timeout: this.timeout,
@@ -211,10 +192,8 @@ export class GitClient {
 
 	/**
 	 * Get current branch name
-	 * @see 02-execa-git-client.md lines 235-242
 	 */
 	async getCurrentBranch(): Promise<string> {
-		// TODO: Copy implementation from spec lines 235-242
 		const { stdout } = await execa("git", ["branch", "--show-current"], {
 			cwd: this.cwd,
 			timeout: this.timeout,
@@ -224,10 +203,8 @@ export class GitClient {
 
 	/**
 	 * Get short commit hash of HEAD
-	 * @see 02-execa-git-client.md lines 247-254
 	 */
 	async getHeadCommit(): Promise<string> {
-		// TODO: Copy implementation from spec lines 247-254
 		const { stdout } = await execa("git", ["rev-parse", "--short", "HEAD"], {
 			cwd: this.cwd,
 			timeout: this.timeout,
@@ -238,10 +215,8 @@ export class GitClient {
 	// ===========================================================================
 	// PRIVATE HELPERS
 	// ===========================================================================
-	// TODO: Copy from 02-execa-git-client.md lines 258-280
 
 	private parseStatusLine(line: string): StagedFile {
-		// TODO: Copy from spec lines 258-266
 		const [status, ...pathParts] = line.split("\t");
 		const path = pathParts[pathParts.length - 1];
 		const oldPath = pathParts.length > 1 ? pathParts[0] : undefined;
@@ -254,7 +229,6 @@ export class GitClient {
 	}
 
 	private parseStatus(status: string): StagedFile["status"] {
-		// TODO: Copy from spec lines 268-278
 		const char = status.charAt(0);
 		switch (char) {
 			case "A":
@@ -284,14 +258,11 @@ export class GitClient {
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
-// TODO: Copy from 02-execa-git-client.md lines 290-315
 
 /**
  * Check if a file is a code file worth analyzing
- * @see 02-execa-git-client.md lines 293-305
  */
 export function isCodeFile(filePath: string): boolean {
-	// TODO: Copy implementation from spec lines 293-305
 	const codeExtensions = [
 		".ts",
 		".tsx",
@@ -323,10 +294,8 @@ export function isCodeFile(filePath: string): boolean {
 
 /**
  * Create GitClient with validation
- * @see 02-execa-git-client.md lines 310-323
  */
 export async function createValidatedGitClient(options?: GitClientOptions): Promise<GitClient> {
-	// TODO: Copy implementation from spec lines 310-323
 	const client = new GitClient(options);
 
 	if (!(await client.isGitInstalled())) {

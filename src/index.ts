@@ -8,6 +8,21 @@ import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
 
+// CLI-UX-002: Git Client for staged files
+import { GitClient, GitNotInstalledError, GitNotRepositoryError, isCodeFile } from "./services/git-client";
+
+// CLI-UX-001, 003, 004: UX Utilities
+import {
+	createFileSummaryTable,
+	createRiskSignalTable,
+	createSnapshotTable,
+	displayHighRiskWarning,
+	displaySaveStory,
+	displaySnapshotSuccess,
+	type FileRiskSummary,
+	ProgressTracker,
+} from "./utils";
+
 // V2 Engine adapter instance (replaces V1 Guardian)
 const engineAdapter = new CLIEngineAdapter();
 
@@ -72,24 +87,16 @@ export function createCLI() {
 				console.log(chalk.cyan("Risk Level:"), riskData.riskLevel.toUpperCase());
 				console.log(chalk.cyan("Risk Score:"), `${riskData.riskScore.toFixed(1)}/10`);
 
-				// Provide detailed feedback based on signals
+				// Display risk signals in formatted table (CLI-UX-003)
 				if (riskData.signals && riskData.signals.length > 0) {
-					const activeSignals = riskData.signals.filter((s) => s.value > 0);
-					if (activeSignals.length > 0) {
-						console.log(chalk.yellow("\nRisk Factors:"));
-						activeSignals.forEach((signal) => {
-							console.log(chalk.yellow(`  ⚠ ${signal.signal}: ${signal.value.toFixed(1)}`));
-						});
-					}
+					console.log();
+					console.log(createRiskSignalTable(riskData.signals));
 				}
 
-				// Provide recommendations based on risk level (V2 uses 0-10 scale)
+				// Display boxed warning for high-risk files (CLI-UX-001)
 				if (riskData.riskScore > 7) {
-					console.log(
-						chalk.red(
-							"\nRecommendation: Consider creating a snapshot before proceeding with these changes.",
-						),
-					);
+					console.log();
+					console.log(displayHighRiskWarning(file, riskData.riskScore));
 				} else if (riskData.riskScore > 4) {
 					console.log(chalk.yellow("\nRecommendation: Review changes before proceeding."));
 				}
@@ -115,7 +122,10 @@ export function createCLI() {
 				});
 
 				spinner.succeed("Snapshot created");
-				console.log(chalk.green("Created snapshot"), snap.id);
+
+				// Display boxed success output (CLI-UX-001)
+				console.log();
+				console.log(displaySnapshotSuccess(snap.id, options.message, options.files?.length || 0));
 			} catch (error: any) {
 				spinner.fail("Failed to create snapshot");
 				console.error(chalk.red("Error:"), error.message);
@@ -137,12 +147,17 @@ export function createCLI() {
 				return;
 			}
 
-			console.table(
-				snaps.map((s: Snapshot) => ({
-					id: s.id.substring(0, 8),
-					time: new Date(s.timestamp).toISOString(),
-					...(s.meta?.message && { message: s.meta.message }),
-				})),
+			// Display snapshots in formatted table (CLI-UX-003)
+			console.log();
+			console.log(
+				createSnapshotTable(
+					snaps.map((s: Snapshot) => ({
+						id: s.id,
+						timestamp: new Date(s.timestamp),
+						message: s.meta?.message,
+						fileCount: s.files?.length,
+					})),
+				),
 			);
 		} catch (error: any) {
 			spinner.fail("Failed to load snapshots");
@@ -194,98 +209,115 @@ export function createCLI() {
 		.description("Pre-commit hook to check for risky AI changes")
 		.option("-s, --snapshot", "Create snapshot if risky changes detected")
 		.option("-q, --quiet", "Suppress output unless issues found")
+		.option("-a, --all", "Check all files, not just staged (legacy behavior)")
 		.action(async (options) => {
+			const cwd = process.cwd();
+
 			try {
-				// MVP Note: This pre-commit hook replaces the need for complex webhook integrations
-				// For MVP, we'll implement a simplified version that checks for common risk patterns
+				// CLI-UX-002: Use GitClient for staged files
+				const git = new GitClient({ cwd });
 
-				const spinner = options.quiet ? null : ora("Checking for risky changes...").start();
+				// Validate git environment
+				if (!(await git.isGitInstalled())) {
+					throw new GitNotInstalledError();
+				}
 
-				// Get staged files (in a real implementation, this would use git commands)
-				// For MVP, we'll just check all files in the current directory
-				const cwd = process.cwd();
-				const allFiles = await getAllFiles(cwd);
+				if (!(await git.isGitRepository())) {
+					throw new GitNotRepositoryError(cwd);
+				}
 
-				// Filter for code files
-				const codeFiles = allFiles.filter(
-					(file) =>
-						file.endsWith(".ts") ||
-						file.endsWith(".tsx") ||
-						file.endsWith(".js") ||
-						file.endsWith(".jsx") ||
-						file.endsWith(".py") ||
-						file.endsWith(".java") ||
-						file.endsWith(".cpp") ||
-						file.endsWith(".c"),
-				);
+				// Get files to check
+				let filesToCheck: string[];
 
-				if (codeFiles.length === 0) {
-					if (spinner) {
-						spinner.succeed("No code files to check");
+				if (options.all) {
+					// Legacy behavior: all files
+					const allFiles = await getAllFiles(cwd);
+					filesToCheck = allFiles.filter(isCodeFile);
+				} else {
+					// New behavior: staged files only (CLI-UX-002)
+					const stagedFiles = await git.getStagedFiles();
+					filesToCheck = stagedFiles
+						.filter((f) => f.status !== "deleted")
+						.filter((f) => isCodeFile(f.path))
+						.map((f) => f.path);
+				}
+
+				if (filesToCheck.length === 0) {
+					if (!options.quiet) {
+						console.log(chalk.green("\u2713 No staged code files to check"));
 					}
 					return;
 				}
 
-				if (spinner) {
-					spinner.text = `Analyzing ${codeFiles.length} files...`;
-				}
+				// CLI-UX-004: Use ProgressTracker for real-time feedback
+				const progress = new ProgressTracker({
+					total: filesToCheck.length,
+					label: "Analyzing",
+					quiet: options.quiet,
+				});
 
-				// Use V2 engine adapter for batch analysis
+				progress.start();
+
+				const fileResults: FileRiskSummary[] = [];
 				let hasRiskyChanges = false;
-				let riskCount = 0;
 
-				// Check each file for risks using V2 engine
-				for (const file of codeFiles) {
+				for (const file of filesToCheck) {
+					progress.update(file);
+
 					try {
-						const fullPath = resolve(cwd, file);
-						const content = await readFile(fullPath, "utf-8");
+						// Get content - staged version or working directory
+						const content = options.all
+							? await readFile(resolve(cwd, file), "utf-8")
+							: await git.getStagedContent(file);
 
-						// Use V2 engine adapter for analysis
 						const result = await engineAdapter.analyze({
 							files: [{ path: file, content }],
 							format: "json",
-							quiet: options.quiet,
+							quiet: true,
 						});
 
-						// V2 uses 0-10 scale, threshold of 5 = medium risk (equivalent to V1's 0.5)
+						let signals: Array<{ signal: string; value: number }> = [];
+						try {
+							const data = JSON.parse(result.output);
+							signals = data.signals || [];
+						} catch {
+							// Output wasn't JSON
+						}
+
+						const riskLevel = result.riskScore > 7 ? "high" : result.riskScore > 4 ? "medium" : "low";
+
+						fileResults.push({
+							file,
+							riskScore: result.riskScore,
+							riskLevel,
+							topSignal: signals.filter((s) => s.value > 0)[0]?.signal,
+						});
+
 						if (result.riskScore > 5) {
 							hasRiskyChanges = true;
-							riskCount++;
-
-							if (!options.quiet) {
-								console.log(
-									chalk.yellow(`\u26a0  Risk detected in ${file}: ${result.riskScore.toFixed(1)}/10`),
-								);
-								// Parse signals from output
-								try {
-									const data = JSON.parse(result.output);
-									if (data.signals) {
-										data.signals
-											.filter((s: { value: number }) => s.value > 0)
-											.forEach((s: { signal: string; value: number }) => {
-												console.log(chalk.gray(`   - ${s.signal}: ${s.value.toFixed(1)}`));
-											});
-									}
-								} catch {
-									// Output wasn't JSON, skip signal details
-								}
-							}
 						}
-					} catch (_error) {
-						// Skip files that can't be read or analyzed
-						if (!options.quiet) {
-							console.log(chalk.gray(`\u26a0  Could not analyze ${file}`));
-						}
+					} catch {
+						// Skip files that can't be analyzed (binary, permissions, etc.)
 					}
 				}
 
+				// Summary statistics
+				const highRisk = fileResults.filter((f) => f.riskScore > 7).length;
+				const mediumRisk = fileResults.filter((f) => f.riskScore > 4 && f.riskScore <= 7).length;
+
 				if (hasRiskyChanges) {
-					if (spinner) {
-						spinner.warn(`Found risks in ${riskCount} files`);
+					progress.fail(
+						`Found risks in ${highRisk + mediumRisk} files (${highRisk} high, ${mediumRisk} medium) - ${progress.getElapsed()}`,
+					);
+
+					// CLI-UX-003: Display results in formatted table
+					if (!options.quiet && fileResults.length > 0) {
+						console.log();
+						console.log(chalk.cyan("Analysis Results:"));
+						console.log(createFileSummaryTable(fileResults));
 					}
 
 					if (options.snapshot) {
-						// Create snapshot for risky changes
 						const snapshotSpinner = ora("Creating snapshot...").start();
 						try {
 							const storage: SnapshotStorage = await createSnapshotStorage(cwd);
@@ -295,6 +327,17 @@ export function createCLI() {
 							});
 
 							snapshotSpinner.succeed(`Snapshot created: ${snap.id.substring(0, 8)}`);
+
+							// CLI-UX-001: Display save story
+							const maxRiskScore = Math.max(...fileResults.map((f) => f.riskScore));
+							console.log();
+							console.log(
+								displaySaveStory(
+									maxRiskScore,
+									fileResults.map((f) => f.file),
+									snap.id,
+								),
+							);
 						} catch (error: any) {
 							snapshotSpinner.fail("Failed to create snapshot");
 							console.error(chalk.red("Error:"), error.message);
@@ -309,17 +352,28 @@ export function createCLI() {
 						console.log(chalk.gray("Run with --snapshot flag to automatically create a snapshot"));
 					}
 
-					// Exit with error code to block commit (unless --no-verify is used)
 					if (!options.quiet) {
 						console.log(chalk.gray("\nTo bypass this check, use: git commit --no-verify"));
 					}
 					process.exit(1);
 				} else {
-					if (spinner) {
-						spinner.succeed("No risky changes detected");
-					}
+					progress.complete(
+						`No risky changes detected in ${filesToCheck.length} files - ${progress.getElapsed()}`,
+					);
 				}
 			} catch (error: any) {
+				if (error instanceof GitNotInstalledError) {
+					console.error(chalk.red("Error:"), "Git must be installed to use the check command");
+					console.log(chalk.gray("Install git: https://git-scm.com/downloads"));
+					process.exit(1);
+				}
+
+				if (error instanceof GitNotRepositoryError) {
+					console.error(chalk.red("Error:"), "This command must be run inside a git repository");
+					console.log(chalk.gray("Initialize with: git init"));
+					process.exit(1);
+				}
+
 				if (!options.quiet) {
 					console.error(chalk.red("Error:"), error.message);
 				}
