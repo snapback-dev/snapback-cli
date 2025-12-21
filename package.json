@@ -37,9 +37,14 @@
     "@snapback/core": "workspace:*",
     "@snapback/engine": "workspace:*",
     "@snapback/sdk": "workspace:*",
+    "boxen": "catalog:",
     "chalk": "catalog:",
+    "cli-table3": "catalog:",
     "commander": "catalog:",
+    "conf": "catalog:",
     "esprima": "catalog:",
+    "execa": "catalog:",
+    "log-update": "catalog:",
     "ora": "catalog:"
   },
   "devDependencies": {
