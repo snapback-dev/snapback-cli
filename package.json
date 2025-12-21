@@ -71,6 +71,10 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
+  "exports": {
+    ".": "./dist/index.js",
+    "./services/snapback-dir": "./dist/services/snapback-dir.js"
+  },
   "type": "module",
   "engines": {
     "node": ">=18.17.0",
