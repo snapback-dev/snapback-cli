@@ -9,6 +9,7 @@ import { Command } from "commander";
 import ora from "ora";
 // New CLI commands
 import {
+	createFixCommand,
 	createInitCommand,
 	createLearnCommand,
 	createLoginCommand,
@@ -77,6 +78,7 @@ export function createCLI() {
 	// Workspace management
 	program.addCommand(createInitCommand());
 	program.addCommand(createStatusCommand());
+	program.addCommand(createFixCommand());
 
 	// MCP tools configuration
 	program.addCommand(createToolsCommand());

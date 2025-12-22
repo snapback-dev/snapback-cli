@@ -5,6 +5,7 @@
  */
 
 export { createLoginCommand, createLogoutCommand, createWhoamiCommand } from "./auth";
+export { createFixCommand } from "./fix";
 export { createInitCommand } from "./init";
 export { createLearnCommand } from "./learn";
 export { createPatternsCommand } from "./patterns";
