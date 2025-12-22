@@ -36,6 +36,7 @@
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
     "@snapback/engine": "workspace:*",
+    "@snapback/intelligence": "workspace:*",
     "@snapback/sdk": "workspace:*",
     "boxen": "catalog:",
     "chalk": "catalog:",

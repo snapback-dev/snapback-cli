@@ -9,16 +9,25 @@ import { Command } from "commander";
 import ora from "ora";
 // New CLI commands
 import {
+	// Intelligence (CLI-UX-005)
+	createContextCommand,
 	createFixCommand,
+	// Workspace management
 	createInitCommand,
+	// Learning
 	createLearnCommand,
+	// Auth
 	createLoginCommand,
 	createLogoutCommand,
 	createPatternsCommand,
+	// Protection
 	createProtectCommand,
 	createSessionCommand,
+	createStatsCommand,
 	createStatusCommand,
+	// MCP
 	createToolsCommand,
+	createValidateCommand,
 	createWatchCommand,
 	createWhoamiCommand,
 } from "./commands";
@@ -88,6 +97,11 @@ export function createCLI() {
 
 	// Session management
 	program.addCommand(createSessionCommand());
+
+	// Intelligence (CLI-UX-005) - Brings internal MCP capabilities to customer CLI
+	program.addCommand(createContextCommand());
+	program.addCommand(createValidateCommand());
+	program.addCommand(createStatsCommand());
 
 	// Learning system
 	program.addCommand(createLearnCommand());
