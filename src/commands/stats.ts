@@ -78,6 +78,7 @@
  * @module commands/stats
  */
 
+import type { LearningStats, ViolationsSummary } from "@snapback/intelligence";
 import chalk from "chalk";
 import Table from "cli-table3";
 import { Command } from "commander";
@@ -97,46 +98,6 @@ import { displayBox } from "../utils/display";
 interface StatsOptions {
 	/** Output as JSON */
 	json?: boolean;
-}
-
-/**
- * Learning statistics from Intelligence.getStats()
- *
- * @remarks
- * See LearningStats type in @snapback/intelligence/types/learning.ts
- */
-interface LearningStats {
-	/** Total interactions logged */
-	totalInteractions: number;
-	/** Number of interactions with feedback */
-	feedbackReceived: number;
-	/** Rate of correct feedback (0-1) */
-	correctRate: number;
-	/** Number of golden examples */
-	goldenExamples: number;
-	/** Breakdown by query type */
-	queryTypeBreakdown: Record<string, number>;
-}
-
-/**
- * Violations summary from Intelligence.getViolationsSummary()
- *
- * @remarks
- * Matches ViolationsSummary type in @snapback/intelligence/types/learning.ts
- */
-interface ViolationsSummary {
-	/** Total violations recorded */
-	total: number;
-	/** Violations grouped by type with counts */
-	byType: Array<{
-		type: string;
-		count: number;
-		status: "tracking" | "ready_for_promotion" | "ready_for_automation" | "promoted" | "automated";
-	}>;
-	/** Types ready for promotion (3+ occurrences) */
-	readyForPromotion: string[];
-	/** Types ready for automation (5+ occurrences) */
-	readyForAutomation: string[];
 }
 
 // =============================================================================
@@ -224,8 +185,8 @@ async function handleStatsCommand(options: StatsOptions): Promise<void> {
 		const intelligence = await getIntelligence(cwd);
 
 		// STEP 2: Get stats (sync methods)
-		const learningStats = intelligence.getStats() as LearningStats;
-		const violationsSummary = intelligence.getViolationsSummary() as ViolationsSummary;
+		const learningStats = intelligence.getStats();
+		const violationsSummary = intelligence.getViolationsSummary();
 
 		// STEP 3: Handle JSON output
 		if (options.json) {

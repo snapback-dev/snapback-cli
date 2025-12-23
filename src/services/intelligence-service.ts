@@ -339,7 +339,8 @@ export function clearIntelligenceCache(): void {
 		// Intelligence.dispose() is async but we fire-and-forget here
 		// In tests, await the individual dispose if needed
 		instance.dispose().catch(() => {
-			// Ignore dispose errors during cache clear
+			// Intentionally silent: dispose errors during cache clear are non-critical
+			// The cache is being cleared regardless, and logging would be noisy
 		});
 	}
 

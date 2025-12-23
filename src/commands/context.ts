@@ -67,6 +67,7 @@
  * @module commands/context
  */
 
+import type { ContextResult } from "@snapback/intelligence";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -92,52 +93,6 @@ interface ContextOptions {
 	json?: boolean;
 	/** Use semantic search (slower, more accurate) */
 	semantic?: boolean;
-}
-
-/**
- * Learning entry from Intelligence
- *
- * @remarks
- * Matches the shape returned by Intelligence.getContext().relevantLearnings
- */
-interface LearningEntry {
-	trigger: string;
-	action: string;
-	type: string;
-}
-
-/**
- * Violation entry from Intelligence
- *
- * @remarks
- * Matches the shape returned by Intelligence.getContext().recentViolations
- */
-interface ViolationEntry {
-	type: string;
-	message: string;
-	prevention?: string;
-}
-
-/**
- * Context result from Intelligence
- *
- * @remarks
- * This is a simplified version of what Intelligence.getContext() returns.
- * The actual return type is more complex - see ContextResult in @snapback/intelligence.
- */
-interface ContextResult {
-	task: string;
-	hardRules?: string;
-	patterns?: string;
-	relevantLearnings?: LearningEntry[];
-	recentViolations?: ViolationEntry[];
-	semanticContext?: {
-		content: string;
-		tokensUsed: number;
-		sections: number;
-		compression: string;
-	};
-	hint?: string;
 }
 
 // =============================================================================
@@ -252,7 +207,7 @@ async function handleContextCommand(task: string | undefined, options: ContextOp
 
 		// STEP 3: Get context from Intelligence
 		// This searches patterns, learnings, and violations
-		const result = (await intelligence.getContext(contextInput)) as ContextResult;
+		const result = await intelligence.getContext(contextInput);
 
 		// STEP 4: Handle JSON output mode
 		if (options.json) {

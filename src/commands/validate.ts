@@ -73,6 +73,7 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import type { ReviewRecommendation } from "@snapback/intelligence";
 import chalk from "chalk";
 import { Command } from "commander";
 import { GitClient, isCodeFile } from "../services/git-client";
@@ -122,45 +123,7 @@ export interface FileValidationResult {
 	 * - "full_review": Critical issues, full review required
 	 * - "error": Validation failed (couldn't read file, etc.)
 	 */
-	recommendation: "auto_merge" | "quick_review" | "full_review" | "error";
-}
-
-/**
- * Layer result from ValidationPipeline
- *
- * @remarks
- * Each of the 7 layers returns this structure.
- * See ValidationPipeline.validate() return type.
- */
-interface LayerResult {
-	layer: string;
-	passed: boolean;
-	duration: number;
-	issues: Array<{
-		severity: "error" | "warning" | "info";
-		type: string;
-		message: string;
-		line?: number;
-		fix?: string;
-	}>;
-}
-
-/**
- * Full pipeline result from Intelligence.validateCode()
- *
- * @remarks
- * This is the PipelineResult type from @snapback/intelligence.
- * Simplified here for clarity.
- */
-interface PipelineResult {
-	overall: {
-		passed: boolean;
-		confidence: number;
-		totalIssues: number;
-	};
-	recommendation: "auto_merge" | "quick_review" | "full_review";
-	layers: LayerResult[];
-	focusPoints: string[];
+	recommendation: ReviewRecommendation | "error";
 }
 
 // =============================================================================
@@ -289,61 +252,70 @@ async function handleValidateCommand(file: string | undefined, options: Validate
 		// STEP 4: Validate each file
 		const results: FileValidationResult[] = [];
 		let hasErrors = false;
+		let progressCompleted = false;
 
-		for (const filePath of filesToValidate) {
-			progress.update(filePath);
+		try {
+			for (const filePath of filesToValidate) {
+				progress.update(filePath);
 
-			try {
-				// Read file content
-				const content = await readFile(resolve(cwd, filePath), "utf-8");
+				try {
+					// Read file content
+					const content = await readFile(resolve(cwd, filePath), "utf-8");
 
-				// Run validation pipeline
-				const pipelineResult = (await intelligence.validateCode(content, filePath)) as PipelineResult;
+					// Run validation pipeline
+					const pipelineResult = await intelligence.validateCode(content, filePath);
 
-				// Collect result
-				results.push({
-					file: filePath,
-					passed: pipelineResult.overall.passed,
-					confidence: pipelineResult.overall.confidence,
-					issues: pipelineResult.overall.totalIssues,
-					recommendation: pipelineResult.recommendation,
-				});
+					// Collect result
+					results.push({
+						file: filePath,
+						passed: pipelineResult.overall.passed,
+						confidence: pipelineResult.overall.confidence,
+						issues: pipelineResult.overall.totalIssues,
+						recommendation: pipelineResult.recommendation,
+					});
 
-				if (!pipelineResult.overall.passed) {
+					if (!pipelineResult.overall.passed) {
+						hasErrors = true;
+					}
+				} catch {
+					// File couldn't be read/validated
+					// Include in results as error
+					results.push({
+						file: filePath,
+						passed: false,
+						confidence: 0,
+						issues: 1,
+						recommendation: "error",
+					});
 					hasErrors = true;
 				}
-			} catch (error) {
-				// File couldn't be read/validated
-				// Include in results as error
-				results.push({
-					file: filePath,
-					passed: false,
-					confidence: 0,
-					issues: 1,
-					recommendation: "error",
-				});
-				hasErrors = true;
+			}
+
+			// STEP 5: Complete progress
+			const passedCount = results.filter((r) => r.passed).length;
+
+			if (hasErrors) {
+				progress.fail(`${passedCount}/${results.length} files passed`);
+			} else {
+				progress.complete(`All ${results.length} files passed validation`);
+			}
+			progressCompleted = true;
+
+			// STEP 6: Output results
+			if (options.json) {
+				console.log(JSON.stringify(results, null, 2));
+			} else if (!options.quiet || hasErrors) {
+				displayValidationResults(results, hasErrors);
+			}
+
+			// STEP 7: Exit with appropriate code
+			process.exit(hasErrors ? 1 : 0);
+		} finally {
+			// Ensure progress is stopped if an error occurred before completion
+			if (!progressCompleted) {
+				progress.fail("Validation interrupted");
 			}
 		}
-
-		// STEP 5: Complete progress
-		const passedCount = results.filter((r) => r.passed).length;
-
-		if (hasErrors) {
-			progress.fail(`${passedCount}/${results.length} files passed`);
-		} else {
-			progress.complete(`All ${results.length} files passed validation`);
-		}
-
-		// STEP 6: Output results
-		if (options.json) {
-			console.log(JSON.stringify(results, null, 2));
-		} else if (!options.quiet || hasErrors) {
-			displayValidationResults(results, hasErrors);
-		}
-
-		// STEP 7: Exit with appropriate code
-		process.exit(hasErrors ? 1 : 0);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 
@@ -415,7 +387,7 @@ async function getFilesToValidate(file: string | undefined, all: boolean | undef
 
 			// Filter to code files, exclude deleted files
 			return stagedFiles.filter((f) => f.status !== "deleted" && isCodeFile(f.path)).map((f) => f.path);
-		} catch (error) {
+		} catch {
 			// Git error - fall back to empty list
 			console.log(chalk.yellow("Could not get staged files"));
 			return [];

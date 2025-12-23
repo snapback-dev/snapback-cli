@@ -111,7 +111,7 @@ vi.mock("@snapback/intelligence", () => ({
 const mockIsSnapbackInitialized = vi.fn();
 const mockGetWorkspaceDir = vi.fn();
 
-vi.mock("../services/snapback-dir", () => ({
+vi.mock("../../src/services/snapback-dir", () => ({
 	isSnapbackInitialized: mockIsSnapbackInitialized,
 	getWorkspaceDir: mockGetWorkspaceDir,
 }));
