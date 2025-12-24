@@ -30,6 +30,8 @@ import {
 	createValidateCommand,
 	createWatchCommand,
 	createWhoamiCommand,
+	// MCP Server
+	mcpCommand,
 } from "./commands";
 // CLI-UX-002: Git Client for staged files
 import { GitClient, GitNotInstalledError, GitNotRepositoryError, isCodeFile } from "./services/git-client";
@@ -91,6 +93,9 @@ export function createCLI() {
 
 	// MCP tools configuration
 	program.addCommand(createToolsCommand());
+
+	// MCP server (--stdio)
+	program.addCommand(mcpCommand);
 
 	// Protection management
 	program.addCommand(createProtectCommand());

@@ -129,4 +129,5 @@ export { createWatchCommand } from "./watch";
 // MCP INTEGRATION COMMANDS
 // =============================================================================
 
+export { mcpCommand } from "./mcp";
 export { createToolsCommand } from "./tools";
