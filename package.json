@@ -24,7 +24,8 @@
     "backup"
   ],
   "bin": {
-    "snapback": "dist/index.js"
+    "snapback": "dist/index.js",
+    "snap": "dist/index.js"
   },
   "files": [
     "dist",
@@ -33,6 +34,7 @@
   ],
   "dependencies": {
     "@inquirer/prompts": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
     "@snapback/mcp-config": "workspace:*",
@@ -41,14 +43,15 @@
     "@snapback/sdk": "workspace:*",
     "boxen": "catalog:",
     "chalk": "catalog:",
-        "chokidar": "catalog:",
+    "chokidar": "catalog:",
     "cli-table3": "catalog:",
     "commander": "catalog:",
     "conf": "catalog:",
     "esprima": "catalog:",
     "execa": "catalog:",
     "log-update": "catalog:",
-    "ora": "catalog:"
+    "ora": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "catalog:",
