@@ -8,6 +8,7 @@
  * @see mcp_companionship.md Part 3 for CLI specification
  */
 
+import { confirm, password } from "@inquirer/prompts";
 import { type AIClientConfig, detectAIClients, getSnapbackMCPConfig, writeClientConfig } from "@snapback/mcp-config";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -35,6 +36,8 @@ export function createToolsCommand(): Command {
 		.option("--list", "List available tools")
 		.option("--dry-run", "Show what would be configured without writing")
 		.option("--force", "Reconfigure even if already set up")
+		.option("-y, --yes", "Skip confirmation prompts (for CI/scripts)")
+		.option("--api-key <key>", "API key for Pro features")
 		.action(async (options) => {
 			try {
 				if (options.list) {
@@ -45,17 +48,25 @@ export function createToolsCommand(): Command {
 				// Determine which tools to configure
 				const toolsToConfig: string[] = [];
 
-				if (options.cursor) toolsToConfig.push("cursor");
-				if (options.claude) toolsToConfig.push("claude");
-				if (options.windsurf) toolsToConfig.push("windsurf");
-				if (options.continue) toolsToConfig.push("continue");
+				if (options.cursor) {
+					toolsToConfig.push("cursor");
+				}
+				if (options.claude) {
+					toolsToConfig.push("claude");
+				}
+				if (options.windsurf) {
+					toolsToConfig.push("windsurf");
+				}
+				if (options.continue) {
+					toolsToConfig.push("continue");
+				}
 
 				// If no specific tool, auto-detect
 				if (toolsToConfig.length === 0) {
-					await autoConfigureTools(options.dryRun, options.force);
+					await autoConfigureTools(options.dryRun, options.force, options.yes, options.apiKey);
 				} else {
 					for (const tool of toolsToConfig) {
-						await configureTool(tool, options.dryRun);
+						await configureTool(tool, options.dryRun, options.yes, options.apiKey);
 					}
 				}
 			} catch (error: unknown) {
@@ -106,7 +117,12 @@ async function listTools(): Promise<void> {
 /**
  * Auto-configure all detected tools
  */
-async function autoConfigureTools(dryRun: boolean, force: boolean): Promise<void> {
+async function autoConfigureTools(
+	dryRun: boolean,
+	force: boolean,
+	skipPrompts = false,
+	providedApiKey?: string,
+): Promise<void> {
 	const detection = detectAIClients();
 
 	if (detection.detected.length === 0) {
@@ -136,9 +152,26 @@ async function autoConfigureTools(dryRun: boolean, force: boolean): Promise<void
 	}
 	console.log();
 
+	// Interactive confirmation (unless --yes flag is set)
+	if (!skipPrompts) {
+		const clientNames = needsSetup.map((c) => c.displayName).join(", ");
+		const proceed = await confirm({
+			message: `Configure SnapBack for ${clientNames}?`,
+			default: true,
+		});
+
+		if (!proceed) {
+			console.log("\nSetup cancelled.");
+			return;
+		}
+	}
+
+	// Get API key (from flag, env, login, or prompt)
+	const apiKey = await resolveApiKey(providedApiKey, skipPrompts);
+
 	// Configure each tool that needs setup
 	for (const client of needsSetup) {
-		await configureClient(client, dryRun);
+		await configureClient(client, dryRun, apiKey);
 	}
 
 	showNextSteps();
@@ -147,7 +180,12 @@ async function autoConfigureTools(dryRun: boolean, force: boolean): Promise<void
 /**
  * Configure a specific tool by name
  */
-async function configureTool(toolName: string, dryRun: boolean): Promise<void> {
+async function configureTool(
+	toolName: string,
+	dryRun: boolean,
+	skipPrompts = false,
+	providedApiKey?: string,
+): Promise<void> {
 	const detection = detectAIClients();
 	const client = detection.clients.find((c) => c.name === toolName);
 
@@ -163,24 +201,20 @@ async function configureTool(toolName: string, dryRun: boolean): Promise<void> {
 		return;
 	}
 
-	await configureClient(client, dryRun);
+	// Get API key (from flag, env, login, or prompt)
+	const apiKey = await resolveApiKey(providedApiKey, skipPrompts);
+
+	await configureClient(client, dryRun, apiKey);
 	showNextSteps();
 }
 
 /**
  * Configure a specific AI client
  */
-async function configureClient(client: AIClientConfig, dryRun: boolean): Promise<void> {
+async function configureClient(client: AIClientConfig, dryRun: boolean, apiKey?: string): Promise<void> {
 	const spinner = ora(`Configuring ${client.displayName}...`).start();
 
 	try {
-		// Get API key if logged in
-		let apiKey: string | undefined;
-		if (await isLoggedIn()) {
-			const credentials = await getCredentials();
-			apiKey = credentials?.accessToken;
-		}
-
 		// Build MCP config
 		const mcpConfig = getSnapbackMCPConfig({ apiKey });
 
@@ -209,6 +243,49 @@ async function configureClient(client: AIClientConfig, dryRun: boolean): Promise
 		spinner.fail(`Failed to configure ${client.displayName}`);
 		throw error;
 	}
+}
+
+/**
+ * Resolve API key from multiple sources
+ * Priority: --api-key flag > SNAPBACK_API_KEY env > logged in credentials > interactive prompt
+ */
+async function resolveApiKey(providedApiKey?: string, skipPrompts = false): Promise<string | undefined> {
+	// 1. Check provided flag
+	if (providedApiKey) {
+		return providedApiKey;
+	}
+
+	// 2. Check environment variable
+	const envKey = process.env.SNAPBACK_API_KEY;
+	if (envKey) {
+		return envKey;
+	}
+
+	// 3. Check logged in credentials
+	if (await isLoggedIn()) {
+		const credentials = await getCredentials();
+		if (credentials?.accessToken) {
+			return credentials.accessToken;
+		}
+	}
+
+	// 4. Interactive prompt (unless --yes flag is set)
+	if (!skipPrompts) {
+		const wantApiKey = await confirm({
+			message: "Do you have a SnapBack API key for Pro features?",
+			default: false,
+		});
+
+		if (wantApiKey) {
+			const key = await password({
+				message: "Enter your API key:",
+				mask: "*",
+			});
+			return key || undefined;
+		}
+	}
+
+	return undefined;
 }
 
 /**
