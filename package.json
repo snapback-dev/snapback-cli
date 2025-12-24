@@ -35,6 +35,7 @@
     "@inquirer/prompts": "catalog:",
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
+    "@snapback/mcp-config": "workspace:*",
     "@snapback/engine": "workspace:*",
     "@snapback/intelligence": "workspace:*",
     "@snapback/sdk": "workspace:*",

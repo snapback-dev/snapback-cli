@@ -2,40 +2,18 @@
  * Tools Command
  *
  * Implements snap tools configure - Auto-setup MCP for Cursor/Claude.
- * Writes to ~/.cursor/mcp.json or ~/.config/claude/mcp.json
+ * Refactored to use shared @snapback/mcp-config package.
  *
  * @see implementation_plan.md Section 1.2
+ * @see mcp_companionship.md Part 3 for CLI specification
  */
 
-import { access, constants, mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { type AIClientConfig, detectAIClients, getSnapbackMCPConfig, writeClientConfig } from "@snapback/mcp-config";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
 
 import { getCredentials, isLoggedIn } from "../services/snapback-dir";
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface MCPServerConfig {
-	command: string;
-	args?: string[];
-	env?: Record<string, string>;
-}
-
-interface MCPConfig {
-	mcpServers: Record<string, MCPServerConfig>;
-}
-
-interface ToolConfig {
-	name: string;
-	displayName: string;
-	configPath: string;
-	detected: boolean;
-}
 
 // =============================================================================
 // COMMAND DEFINITION
@@ -53,8 +31,10 @@ export function createToolsCommand(): Command {
 		.option("--cursor", "Configure for Cursor only")
 		.option("--claude", "Configure for Claude Desktop only")
 		.option("--windsurf", "Configure for Windsurf only")
+		.option("--continue", "Configure for Continue only")
 		.option("--list", "List available tools")
 		.option("--dry-run", "Show what would be configured without writing")
+		.option("--force", "Reconfigure even if already set up")
 		.action(async (options) => {
 			try {
 				if (options.list) {
@@ -68,10 +48,11 @@ export function createToolsCommand(): Command {
 				if (options.cursor) toolsToConfig.push("cursor");
 				if (options.claude) toolsToConfig.push("claude");
 				if (options.windsurf) toolsToConfig.push("windsurf");
+				if (options.continue) toolsToConfig.push("continue");
 
 				// If no specific tool, auto-detect
 				if (toolsToConfig.length === 0) {
-					await autoConfigureTools(options.dryRun);
+					await autoConfigureTools(options.dryRun, options.force);
 				} else {
 					for (const tool of toolsToConfig) {
 						await configureTool(tool, options.dryRun);
@@ -99,217 +80,201 @@ export function createToolsCommand(): Command {
 // =============================================================================
 
 /**
- * Get known tool configurations
- */
-function getKnownTools(): ToolConfig[] {
-	const home = homedir();
-
-	return [
-		{
-			name: "cursor",
-			displayName: "Cursor",
-			configPath: join(home, ".cursor", "mcp.json"),
-			detected: false,
-		},
-		{
-			name: "claude",
-			displayName: "Claude Desktop",
-			configPath: join(home, ".config", "claude", "mcp.json"),
-			detected: false,
-		},
-		{
-			name: "windsurf",
-			displayName: "Windsurf",
-			configPath: join(home, ".windsurf", "mcp.json"),
-			detected: false,
-		},
-	];
-}
-
-/**
- * Detect which tools are installed
- */
-async function detectInstalledTools(): Promise<ToolConfig[]> {
-	const tools = getKnownTools();
-
-	for (const tool of tools) {
-		try {
-			// Check if config directory exists or if tool is likely installed
-			const configDir = dirname(tool.configPath);
-			await access(configDir, constants.F_OK);
-			tool.detected = true;
-		} catch {
-			// Directory doesn't exist
-		}
-	}
-
-	return tools;
-}
-
-/**
- * List available tools
+ * List available tools and their detection status
  */
 async function listTools(): Promise<void> {
-	const tools = await detectInstalledTools();
+	const detection = detectAIClients();
 
-	console.log(chalk.cyan("Available AI Tools:"));
+	console.log(chalk.cyan("\nAvailable AI Tools:"));
 	console.log();
 
-	for (const tool of tools) {
-		const status = tool.detected ? chalk.green("✓ Detected") : chalk.gray("Not detected");
-		console.log(`  ${tool.displayName.padEnd(20)} ${status}`);
-		console.log(chalk.gray(`    Config: ${tool.configPath}`));
+	for (const client of detection.clients) {
+		const status = client.exists
+			? client.hasSnapback
+				? chalk.green("✓ Configured")
+				: chalk.yellow("○ Needs setup")
+			: chalk.gray("Not installed");
+
+		console.log(`  ${client.displayName.padEnd(20)} ${status}`);
+		console.log(chalk.gray(`    Config: ${client.configPath}`));
 	}
 
 	console.log();
-	console.log(chalk.gray("Use --cursor, --claude, or --windsurf to configure a specific tool"));
+	console.log(chalk.gray("Use --cursor, --claude, --windsurf, or --continue to configure a specific tool"));
 }
 
 /**
  * Auto-configure all detected tools
  */
-async function autoConfigureTools(dryRun: boolean): Promise<void> {
-	const tools = await detectInstalledTools();
-	const detected = tools.filter((t) => t.detected);
+async function autoConfigureTools(dryRun: boolean, force: boolean): Promise<void> {
+	const detection = detectAIClients();
 
-	if (detected.length === 0) {
-		console.log(chalk.yellow("No AI tools detected"));
-		console.log(chalk.gray("Install Cursor, Claude Desktop, or Windsurf to use MCP"));
+	if (detection.detected.length === 0) {
+		console.log(chalk.yellow("\nNo AI tools detected"));
+		console.log(chalk.gray("Install one of these to use SnapBack MCP:"));
+		console.log(chalk.gray("  • Claude Desktop - https://claude.ai/download"));
+		console.log(chalk.gray("  • Cursor - https://cursor.sh"));
+		console.log(chalk.gray("  • Windsurf - https://codeium.com/windsurf"));
+		console.log(chalk.gray("  • Continue - https://continue.dev"));
 		return;
 	}
 
-	console.log(chalk.cyan(`Detected ${detected.length} AI tool(s):`));
-	for (const tool of detected) {
-		console.log(`  • ${tool.displayName}`);
+	// Determine what needs configuration
+	const needsSetup = force ? detection.detected : detection.needsSetup;
+
+	if (needsSetup.length === 0) {
+		console.log(chalk.green("\n✓ All detected AI tools already have SnapBack configured!"));
+		console.log(chalk.gray("Use --force to reconfigure."));
+		showNextSteps();
+		return;
+	}
+
+	console.log(chalk.cyan(`\nDetected ${detection.detected.length} AI tool(s):`));
+	for (const client of detection.detected) {
+		const status = client.hasSnapback ? chalk.green("(configured)") : chalk.yellow("(needs setup)");
+		console.log(`  • ${client.displayName} ${status}`);
 	}
 	console.log();
 
-	for (const tool of detected) {
-		await configureTool(tool.name, dryRun);
+	// Configure each tool that needs setup
+	for (const client of needsSetup) {
+		await configureClient(client, dryRun);
 	}
+
+	showNextSteps();
 }
 
 /**
- * Configure a specific tool
+ * Configure a specific tool by name
  */
 async function configureTool(toolName: string, dryRun: boolean): Promise<void> {
-	const tools = getKnownTools();
-	const tool = tools.find((t) => t.name === toolName);
+	const detection = detectAIClients();
+	const client = detection.clients.find((c) => c.name === toolName);
 
-	if (!tool) {
+	if (!client) {
 		console.error(chalk.red(`Unknown tool: ${toolName}`));
+		console.log(chalk.gray("Available tools: cursor, claude, windsurf, continue"));
 		return;
 	}
 
-	const spinner = ora(`Configuring ${tool.displayName}...`).start();
+	if (!client.exists) {
+		console.log(chalk.yellow(`${client.displayName} is not installed`));
+		console.log(chalk.gray(`Expected config at: ${client.configPath}`));
+		return;
+	}
+
+	await configureClient(client, dryRun);
+	showNextSteps();
+}
+
+/**
+ * Configure a specific AI client
+ */
+async function configureClient(client: AIClientConfig, dryRun: boolean): Promise<void> {
+	const spinner = ora(`Configuring ${client.displayName}...`).start();
 
 	try {
+		// Get API key if logged in
+		let apiKey: string | undefined;
+		if (await isLoggedIn()) {
+			const credentials = await getCredentials();
+			apiKey = credentials?.accessToken;
+		}
+
 		// Build MCP config
-		const mcpConfig = await buildMCPConfig();
+		const mcpConfig = getSnapbackMCPConfig({ apiKey });
 
 		if (dryRun) {
-			spinner.info(`Would configure ${tool.displayName}`);
-			console.log(chalk.gray(`Path: ${tool.configPath}`));
-			console.log(chalk.gray("Config:"));
+			spinner.info(`Would configure ${client.displayName}`);
+			console.log(chalk.gray(`  Path: ${client.configPath}`));
+			console.log(chalk.gray("  Config:"));
 			console.log(JSON.stringify(mcpConfig, null, 2));
 			return;
 		}
 
-		// Read existing config if it exists
-		let existingConfig: MCPConfig = { mcpServers: {} };
-		try {
-			const content = await readFile(tool.configPath, "utf-8");
-			existingConfig = JSON.parse(content) as MCPConfig;
-		} catch {
-			// No existing config, start fresh
+		// Write config using shared module
+		const result = writeClientConfig(client, mcpConfig);
+
+		if (result.success) {
+			spinner.succeed(`Configured ${client.displayName}`);
+			console.log(chalk.gray(`  Config: ${client.configPath}`));
+			if (result.backup) {
+				console.log(chalk.gray(`  Backup: ${result.backup}`));
+			}
+		} else {
+			spinner.fail(`Failed to configure ${client.displayName}`);
+			console.error(chalk.red(`  Error: ${result.error}`));
 		}
-
-		// Merge configs (preserve existing servers)
-		const mergedConfig: MCPConfig = {
-			...existingConfig,
-			mcpServers: {
-				...existingConfig.mcpServers,
-				...mcpConfig.mcpServers,
-			},
-		};
-
-		// Write config
-		await mkdir(dirname(tool.configPath), { recursive: true });
-		await writeFile(tool.configPath, JSON.stringify(mergedConfig, null, 2));
-
-		spinner.succeed(`Configured ${tool.displayName}`);
-		console.log(chalk.gray(`  Config: ${tool.configPath}`));
 	} catch (error) {
-		spinner.fail(`Failed to configure ${tool.displayName}`);
+		spinner.fail(`Failed to configure ${client.displayName}`);
 		throw error;
 	}
-}
-
-/**
- * Build MCP configuration for SnapBack
- */
-async function buildMCPConfig(): Promise<MCPConfig> {
-	const env: Record<string, string> = {};
-
-	// Add API key if logged in
-	if (await isLoggedIn()) {
-		const credentials = await getCredentials();
-		if (credentials?.accessToken) {
-			env.SNAPBACK_API_KEY = credentials.accessToken;
-		}
-	}
-
-	return {
-		mcpServers: {
-			snapback: {
-				command: "npx",
-				args: ["-y", "@snapback/mcp-server"],
-				...(Object.keys(env).length > 0 && { env }),
-			},
-		},
-	};
 }
 
 /**
  * Check status of all tool configurations
  */
 async function checkToolsStatus(): Promise<void> {
-	const tools = await detectInstalledTools();
+	const detection = detectAIClients();
 
-	console.log(chalk.cyan("MCP Configuration Status:"));
+	console.log(chalk.cyan("\nMCP Configuration Status:"));
 	console.log();
 
-	for (const tool of tools) {
-		if (!tool.detected) {
-			console.log(`${chalk.gray("○")} ${tool.displayName.padEnd(20)} ${chalk.gray("Not detected")}`);
-			continue;
+	for (const client of detection.clients) {
+		let icon: string;
+		let status: string;
+
+		if (!client.exists) {
+			icon = chalk.gray("○");
+			status = chalk.gray("Not installed");
+		} else if (client.hasSnapback) {
+			icon = chalk.green("✓");
+			status = chalk.green("Configured");
+		} else {
+			icon = chalk.yellow("○");
+			status = chalk.yellow("Detected but not configured");
 		}
 
-		// Check if snapback is configured
-		try {
-			const content = await readFile(tool.configPath, "utf-8");
-			const config = JSON.parse(content) as MCPConfig;
-
-			if (config.mcpServers?.snapback) {
-				console.log(`${chalk.green("✓")} ${tool.displayName.padEnd(20)} ${chalk.green("Configured")}`);
-			} else {
-				console.log(
-					`${chalk.yellow("○")} ${tool.displayName.padEnd(20)} ${chalk.yellow("Detected but not configured")}`,
-				);
-			}
-		} catch {
-			console.log(
-				`${chalk.yellow("○")} ${tool.displayName.padEnd(20)} ${chalk.yellow("Detected but not configured")}`,
-			);
-		}
+		console.log(`${icon} ${client.displayName.padEnd(20)} ${status}`);
 	}
 
 	console.log();
-	console.log(chalk.gray("Run: snap tools configure"));
+
+	if (detection.needsSetup.length > 0) {
+		console.log(chalk.yellow(`${detection.needsSetup.length} tool(s) need configuration.`));
+		console.log(chalk.gray("Run: snap tools configure"));
+	} else if (detection.detected.length > 0) {
+		console.log(chalk.green("All detected AI tools are configured!"));
+	} else {
+		console.log(chalk.gray("Install Claude Desktop or Cursor to get started."));
+	}
+}
+
+/**
+ * Show next steps after configuration
+ */
+function showNextSteps(): void {
+	console.log();
+	console.log(chalk.bold("Next Steps:"));
+	console.log();
+	console.log("  1. Restart your AI assistant (Claude Desktop, Cursor, etc.)");
+	console.log('  2. Ask your AI: "What does SnapBack know about this project?"');
+	console.log('  3. Before risky changes, ask: "Create a SnapBack checkpoint"');
+	console.log();
+
+	console.log(chalk.dim("Available tools your AI can now use:"));
+	console.log(chalk.dim("  • snapback.get_context      - Understand your codebase"));
+	console.log(chalk.dim("  • snapback.analyze_risk     - Assess change risks"));
+	console.log(chalk.dim("  • snapback.create_checkpoint - Create safety snapshots (Pro)"));
+	console.log(chalk.dim("  • snapback.restore_checkpoint - Recover from mistakes (Pro)"));
+	console.log();
+
+	console.log(chalk.blue("Get an API key: https://console.snapback.dev/settings/api-keys"));
+	console.log();
 }
 
 // =============================================================================
 // EXPORTS
 // =============================================================================
 
-export { detectInstalledTools, configureTool, buildMCPConfig, checkToolsStatus };
+export { listTools, autoConfigureTools, configureTool, checkToolsStatus };
