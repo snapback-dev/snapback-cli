@@ -18,6 +18,7 @@ import {
 	type ProtectedFile,
 	saveProtectedFiles,
 } from "../services/snapback-dir";
+import { formatDate } from "../utils";
 
 // =============================================================================
 // COMMAND DEFINITION
@@ -267,23 +268,7 @@ export function createProtectCommand(): Command {
 }
 
 // =============================================================================
-// HELPERS
-// =============================================================================
-
-/**
- * Format date for display
- */
-function formatDate(isoDate: string): string {
-	const date = new Date(isoDate);
-	return date.toLocaleDateString("en-US", {
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-	});
-}
-
-// =============================================================================
 // EXPORTS
 // =============================================================================
 
-export { formatDate };
+// formatDate now exported from ../utils (consolidated utility)

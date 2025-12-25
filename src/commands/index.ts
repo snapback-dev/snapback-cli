@@ -131,3 +131,76 @@ export { createWatchCommand } from "./watch";
 
 export { mcpCommand } from "./mcp";
 export { createToolsCommand } from "./tools";
+
+// =============================================================================
+// POLISH COMMANDS (Phase 6)
+// =============================================================================
+// These commands complete the CLI experience with diagnostics, updates, and config.
+//
+// @see cli_ui_imp.md Phase 6 specification
+
+/**
+ * Alias command - Create command shortcuts
+ *
+ * @example
+ * ```bash
+ * snap alias list
+ * snap alias set st status
+ * snap alias delete st
+ * ```
+ */
+export { createAliasCommand, expandAlias } from "./alias";
+/**
+ * Config command - Manage CLI configuration
+ *
+ * @example
+ * ```bash
+ * snap config list
+ * snap config get apiUrl
+ * snap config set apiUrl https://api.snapback.dev
+ * snap config path
+ * ```
+ */
+export { createConfigCommand } from "./config";
+/**
+ * Doctor command - Comprehensive diagnostics
+ *
+ * @example
+ * ```bash
+ * snap doctor
+ * snap doctor --fix
+ * snap doctor --json
+ * ```
+ */
+export { createDoctorCommand } from "./doctor";
+/**
+ * Undo command - Restore from last destructive operation
+ *
+ * @example
+ * ```bash
+ * snap undo
+ * snap undo --list
+ * ```
+ */
+export { createUndoCommand } from "./undo";
+/**
+ * Upgrade command - Self-update CLI
+ *
+ * @example
+ * ```bash
+ * snap upgrade
+ * snap upgrade --check
+ * snap upgrade --canary
+ * ```
+ */
+export { createUpgradeCommand } from "./upgrade";
+/**
+ * Wizard command - Interactive first-run setup
+ *
+ * @example
+ * ```bash
+ * snap wizard
+ * snap wizard --force
+ * ```
+ */
+export { createWizardCommand } from "./wizard";

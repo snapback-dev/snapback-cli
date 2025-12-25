@@ -73,6 +73,8 @@ export {
 	createValidationTable,
 	type FileRiskSummary,
 	formatConfidence,
+	// Date formatting (consolidated utility)
+	formatDate,
 	formatRecommendation,
 	formatRelativeTime,
 	type LearningEntry,
@@ -99,3 +101,23 @@ export {
 	// Helpers
 	renderProgressBar,
 } from "./progress";
+
+// =============================================================================
+// SAFE OPERATIONS - Dry-run, confirmation, undo
+// =============================================================================
+
+export {
+	confirmOperation,
+	createDiff,
+	getLastOperation,
+	getRecentOperations,
+	handleDryRun,
+	type OperationChange,
+	recordOperation,
+	removeOperation,
+	type SafeOperationOptions,
+	safeOps,
+	showAffectedFiles,
+	type UndoableOperation,
+	undoLastOperation,
+} from "./safe-ops";

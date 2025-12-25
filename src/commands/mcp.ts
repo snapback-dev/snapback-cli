@@ -14,13 +14,37 @@ import { type McpServerOptions, runStdioMcpServer } from "@snapback/mcp";
 import { resolveWorkspaceRoot } from "@snapback/mcp/middleware";
 import { createCommand } from "commander";
 
+/**
+ * Resolve tier from environment or CLI flag
+ * Priority: CLI flag > SNAPBACK_TIER env > default
+ */
+function resolveTier(cliTier?: string): "free" | "pro" | "enterprise" {
+	// CLI flag takes priority
+	if (cliTier && ["free", "pro", "enterprise"].includes(cliTier)) {
+		return cliTier as "free" | "pro" | "enterprise";
+	}
+
+	// Check environment variable
+	const envTier = process.env.SNAPBACK_TIER;
+	if (envTier && ["free", "pro", "enterprise"].includes(envTier)) {
+		return envTier as "free" | "pro" | "enterprise";
+	}
+
+	// Check for dev mode (API key present = pro)
+	if (process.env.SNAPBACK_API_KEY) {
+		return "pro";
+	}
+
+	return "free";
+}
+
 export function createMcpCommand() {
 	const cmd = createCommand("mcp");
 
 	cmd.description("Run MCP server for Cursor/Claude integration")
 		.option("--stdio", "Use stdio transport (default)")
 		.option("--workspace <path>", "Workspace root path (auto-resolved if not provided)")
-		.option("--tier <tier>", "User tier (free|pro|enterprise)", "free")
+		.option("--tier <tier>", "User tier (free|pro|enterprise). Can also set via SNAPBACK_TIER env var")
 		.action(async (options) => {
 			try {
 				// Resolve workspace root with validation
@@ -31,10 +55,13 @@ export function createMcpCommand() {
 					process.exit(1);
 				}
 
+				// Resolve tier from CLI flag, env var, or default
+				const tier = resolveTier(options.tier);
+
 				// Build server options
 				const serverOptions: McpServerOptions = {
 					workspaceRoot: workspaceValidation.root,
-					tier: (options.tier || "free") as "free" | "pro" | "enterprise",
+					tier,
 				};
 
 				// Launch MCP server with stdio transport

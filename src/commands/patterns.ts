@@ -18,6 +18,7 @@ import {
 	type ViolationEntry,
 	writeSnapbackJson,
 } from "../services/snapback-dir";
+import { formatDate } from "../utils";
 
 // =============================================================================
 // TYPES
@@ -313,20 +314,8 @@ async function promoteToPattern(
 	await writeSnapbackJson("patterns/workspace-patterns.json", patterns, workspaceRoot);
 }
 
-/**
- * Format date for display
- */
-function formatDate(isoDate: string): string {
-	const date = new Date(isoDate);
-	return date.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
-}
-
 // =============================================================================
 // EXPORTS
 // =============================================================================
 
-export { promoteToPattern, formatDate };
+export { promoteToPattern };

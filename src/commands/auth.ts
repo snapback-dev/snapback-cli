@@ -1,13 +1,18 @@
 /**
  * Authentication Commands
  *
- * Implements snap login/logout/whoami with OAuth Device Code Flow
+ * Implements snap login/logout/whoami with multiple auth strategies
  * for minimal friction user experience.
  *
- * Flow:
- * 1. snap login → Opens browser for OAuth
- * 2. User authenticates in browser
- * 3. CLI receives token via local callback server
+ * Auth Methods (in priority order):
+ * 1. --api-key: Direct API key auth (CI/CD, onboarding quick-start)
+ * 2. --browser: Browser OAuth with local callback server
+ * 3. Default: Device code flow (works everywhere, including SSH/headless)
+ *
+ * Device Code Flow (RFC 8628) - Default:
+ * 1. snap login → Displays user code and verification URL
+ * 2. User visits URL on any device and enters code
+ * 3. CLI polls for authorization completion
  * 4. Credentials stored in ~/.snapback/credentials.json
  *
  * @see implementation_plan.md Section 1.2
@@ -42,20 +47,25 @@ const AUTH_TIMEOUT_MS = 120000; // 2 minutes
 
 /**
  * Create the login command
+ *
+ * Default: Device code flow (works everywhere, including remote/headless)
+ * --browser: Open browser for OAuth (convenient on local machines)
+ * --api-key: Use API key directly (CI/CD, onboarding quick-start)
  */
 export function createLoginCommand(): Command {
 	return new Command("login")
 		.description("Login to SnapBack")
-		.option("--api-key <key>", "Use API key instead of browser login")
-		.option("--no-browser", "Use device code flow instead of browser")
+		.option("--api-key <key>", "Use API key directly (CI/CD, onboarding)")
+		.option("--browser", "Open browser for OAuth instead of device code")
 		.action(async (options) => {
 			try {
 				if (options.apiKey) {
 					await loginWithApiKey(options.apiKey);
-				} else if (options.browser === false) {
-					await loginWithDeviceCode();
-				} else {
+				} else if (options.browser) {
 					await loginWithBrowser();
+				} else {
+					// Default: Device code flow (works everywhere)
+					await loginWithDeviceCode();
 				}
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);

@@ -9,8 +9,12 @@ import { Command } from "commander";
 import ora from "ora";
 // New CLI commands
 import {
+	// Polish commands (Phase 6)
+	createAliasCommand,
+	createConfigCommand,
 	// Intelligence (CLI-UX-005)
 	createContextCommand,
+	createDoctorCommand,
 	createFixCommand,
 	// Workspace management
 	createInitCommand,
@@ -27,14 +31,20 @@ import {
 	createStatusCommand,
 	// MCP
 	createToolsCommand,
+	createUndoCommand,
+	createUpgradeCommand,
 	createValidateCommand,
 	createWatchCommand,
 	createWhoamiCommand,
+	// Interactive wizard
+	createWizardCommand,
 	// MCP Server
 	mcpCommand,
 } from "./commands";
 // CLI-UX-002: Git Client for staged files
 import { GitClient, GitNotInstalledError, GitNotRepositoryError, isCodeFile } from "./services/git-client";
+// Smart Errors UI
+import { displayUnknownCommandError } from "./ui/errors";
 // CLI-UX-001, 003, 004: UX Utilities
 import {
 	createFileSummaryTable,
@@ -114,6 +124,48 @@ export function createCLI() {
 
 	// Continuous watching
 	program.addCommand(createWatchCommand());
+
+	// =========================================================================
+	// POLISH COMMANDS (Phase 6)
+	// =========================================================================
+
+	// Configuration management
+	program.addCommand(createConfigCommand());
+
+	// Diagnostics
+	program.addCommand(createDoctorCommand());
+
+	// Self-update
+	program.addCommand(createUpgradeCommand());
+
+	// Interactive wizard for first-time users
+	program.addCommand(createWizardCommand());
+
+	// Undo command for reverting operations
+	program.addCommand(createUndoCommand());
+
+	// Command aliases
+	program.addCommand(createAliasCommand());
+
+	// =========================================================================
+	// ALIAS EXPANSION
+	// =========================================================================
+
+	// Hook into argument parsing to expand aliases
+	program.hook("preAction", (_thisCommand) => {
+		// Note: alias expansion is handled at parse time
+		// This hook is here for future expansion features
+	});
+
+	// =========================================================================
+	// UNKNOWN COMMAND HANDLER (Smart Error Suggestions)
+	// =========================================================================
+
+	program.on("command:*", (unknownCommand: string[]) => {
+		const cmd = unknownCommand[0];
+		displayUnknownCommandError(cmd);
+		process.exit(1);
+	});
 
 	// =========================================================================
 	// EXISTING COMMANDS

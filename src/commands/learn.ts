@@ -17,6 +17,7 @@ import {
 	type LearningEntry,
 	recordLearning,
 } from "../services/snapback-dir";
+import { formatDate } from "../utils";
 
 // =============================================================================
 // COMMAND DEFINITION
@@ -161,18 +162,6 @@ function formatType(type: LearningEntry["type"]): string {
 	};
 
 	return formats[type] || type;
-}
-
-/**
- * Format date for display
- */
-function formatDate(isoDate: string): string {
-	const date = new Date(isoDate);
-	return date.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
 }
 
 // =============================================================================

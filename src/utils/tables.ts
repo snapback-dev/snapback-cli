@@ -196,6 +196,27 @@ export function formatRelativeTime(date: Date): string {
 }
 
 /**
+ * Format ISO date string for human-readable display
+ *
+ * @param isoDate - ISO date string or Date object
+ * @returns Formatted date string (e.g., "Dec 25, 2024")
+ *
+ * @example
+ * ```typescript
+ * formatDate("2024-12-25T10:30:00Z")
+ * // Returns: "Dec 25, 2024"
+ * ```
+ */
+export function formatDate(isoDate: string | Date): string {
+	const date = typeof isoDate === "string" ? new Date(isoDate) : isoDate;
+	return date.toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
+/**
  * Format confidence as percentage with color
  *
  * @param confidence - Confidence value 0-1

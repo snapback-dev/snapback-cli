@@ -72,7 +72,13 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "type-check": "tsc -p tsconfig.json --noEmit"
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "cli:install": "pnpm build && pnpm link --global && echo '✅ CLI installed globally. Run: snap --help or snapback --help'",
+    "cli:uninstall": "pnpm unlink --global && echo '✅ CLI uninstalled globally'",
+    "cli:reinstall": "pnpm run cli:uninstall && pnpm run cli:install",
+    "mcp:configure": "node dist/index.js tools configure --yes",
+    "mcp:configure:dev": "node dist/index.js tools configure --yes --dev",
+    "mcp:status": "node dist/index.js tools configure --list"
   },
   "publishConfig": {
     "access": "public",

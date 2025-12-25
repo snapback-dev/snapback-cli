@@ -8,6 +8,8 @@
  * @see mcp_companionship.md Part 3 for CLI specification
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { confirm, password } from "@inquirer/prompts";
 import { type AIClientConfig, detectAIClients, getSnapbackMCPConfig, writeClientConfig } from "@snapback/mcp-config";
 import chalk from "chalk";
@@ -33,11 +35,20 @@ export function createToolsCommand(): Command {
 		.option("--claude", "Configure for Claude Desktop only")
 		.option("--windsurf", "Configure for Windsurf only")
 		.option("--continue", "Configure for Continue only")
+		.option("--vscode", "Configure for VS Code only")
+		.option("--zed", "Configure for Zed only")
+		.option("--cline", "Configure for Cline only")
+		.option("--gemini", "Configure for Gemini/Antigravity only")
+		.option("--aider", "Configure for Aider only")
+		.option("--roo-code", "Configure for Roo Code only")
 		.option("--list", "List available tools")
 		.option("--dry-run", "Show what would be configured without writing")
 		.option("--force", "Reconfigure even if already set up")
 		.option("-y, --yes", "Skip confirmation prompts (for CI/scripts)")
 		.option("--api-key <key>", "API key for Pro features")
+		.option("--dev", "Use local development mode (direct node execution with inferred workspace)")
+		.option("--workspace <path>", "Override workspace root path")
+
 		.action(async (options) => {
 			try {
 				if (options.list) {
@@ -60,13 +71,45 @@ export function createToolsCommand(): Command {
 				if (options.continue) {
 					toolsToConfig.push("continue");
 				}
+				if (options.vscode) {
+					toolsToConfig.push("vscode");
+				}
+				if (options.zed) {
+					toolsToConfig.push("zed");
+				}
+				if (options.cline) {
+					toolsToConfig.push("cline");
+				}
+				if (options.gemini) {
+					toolsToConfig.push("gemini");
+				}
+				if (options.aider) {
+					toolsToConfig.push("aider");
+				}
+				if (options["roo-code"] || options.rooCode) {
+					toolsToConfig.push("roo-code");
+				}
 
 				// If no specific tool, auto-detect
 				if (toolsToConfig.length === 0) {
-					await autoConfigureTools(options.dryRun, options.force, options.yes, options.apiKey);
+					await autoConfigureTools(
+						options.dryRun,
+						options.force,
+						options.yes,
+						options.apiKey,
+						options.dev,
+						options.workspace,
+					);
 				} else {
 					for (const tool of toolsToConfig) {
-						await configureTool(tool, options.dryRun, options.yes, options.apiKey);
+						await configureTool(
+							tool,
+							options.dryRun,
+							options.yes,
+							options.apiKey,
+							options.dev,
+							options.workspace,
+						);
 					}
 				}
 			} catch (error: unknown) {
@@ -122,6 +165,8 @@ async function autoConfigureTools(
 	force: boolean,
 	skipPrompts = false,
 	providedApiKey?: string,
+	devMode = false,
+	workspaceOverride?: string,
 ): Promise<void> {
 	const detection = detectAIClients();
 
@@ -171,7 +216,7 @@ async function autoConfigureTools(
 
 	// Configure each tool that needs setup
 	for (const client of needsSetup) {
-		await configureClient(client, dryRun, apiKey);
+		await configureClient(client, dryRun, apiKey, devMode, workspaceOverride);
 	}
 
 	showNextSteps();
@@ -185,6 +230,8 @@ async function configureTool(
 	dryRun: boolean,
 	skipPrompts = false,
 	providedApiKey?: string,
+	devMode = false,
+	workspaceOverride?: string,
 ): Promise<void> {
 	const detection = detectAIClients();
 	const client = detection.clients.find((c) => c.name === toolName);
@@ -204,23 +251,56 @@ async function configureTool(
 	// Get API key (from flag, env, login, or prompt)
 	const apiKey = await resolveApiKey(providedApiKey, skipPrompts);
 
-	await configureClient(client, dryRun, apiKey);
+	await configureClient(client, dryRun, apiKey, devMode, workspaceOverride);
 	showNextSteps();
 }
 
 /**
  * Configure a specific AI client
  */
-async function configureClient(client: AIClientConfig, dryRun: boolean, apiKey?: string): Promise<void> {
+async function configureClient(
+	client: AIClientConfig,
+	dryRun: boolean,
+	apiKey?: string,
+	devMode = false,
+	workspaceOverride?: string,
+): Promise<void> {
 	const spinner = ora(`Configuring ${client.displayName}...`).start();
 
 	try {
+		// Resolve workspace root for dev mode
+		let workspaceRoot: string | undefined;
+		let localCliPath: string | undefined;
+
+		if (devMode) {
+			// Infer workspace from cwd or find repo root
+			workspaceRoot = workspaceOverride || findWorkspaceRoot(process.cwd());
+			// Find CLI dist path relative to workspace
+			localCliPath = findCliDistPath(workspaceRoot);
+
+			if (!localCliPath) {
+				spinner.fail("Could not find CLI dist. Run 'pnpm build' first.");
+				return;
+			}
+
+			spinner.text = `Configuring ${client.displayName} (dev mode)...`;
+		}
+
 		// Build MCP config
-		const mcpConfig = getSnapbackMCPConfig({ apiKey });
+		const mcpConfig = getSnapbackMCPConfig({
+			apiKey,
+			useLocalDev: devMode,
+			localCliPath,
+			workspaceRoot,
+		});
 
 		if (dryRun) {
 			spinner.info(`Would configure ${client.displayName}`);
 			console.log(chalk.gray(`  Path: ${client.configPath}`));
+			if (devMode) {
+				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
+				console.log(chalk.gray(`  CLI Path: ${localCliPath}`));
+			}
 			console.log(chalk.gray("  Config:"));
 			console.log(JSON.stringify(mcpConfig, null, 2));
 			return;
@@ -230,8 +310,11 @@ async function configureClient(client: AIClientConfig, dryRun: boolean, apiKey?:
 		const result = writeClientConfig(client, mcpConfig);
 
 		if (result.success) {
-			spinner.succeed(`Configured ${client.displayName}`);
+			spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
 			console.log(chalk.gray(`  Config: ${client.configPath}`));
+			if (devMode) {
+				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
+			}
 			if (result.backup) {
 				console.log(chalk.gray(`  Backup: ${result.backup}`));
 			}
@@ -243,6 +326,47 @@ async function configureClient(client: AIClientConfig, dryRun: boolean, apiKey?:
 		spinner.fail(`Failed to configure ${client.displayName}`);
 		throw error;
 	}
+}
+
+/**
+ * Find the workspace root by looking for markers (.git, package.json, .snapback)
+ */
+function findWorkspaceRoot(startDir: string): string {
+	let dir = startDir;
+	const root = "/";
+
+	while (dir !== root) {
+		// Check for workspace markers
+		if (
+			existsSync(join(dir, ".git")) ||
+			existsSync(join(dir, "package.json")) ||
+			existsSync(join(dir, ".snapback"))
+		) {
+			return dir;
+		}
+		dir = join(dir, "..");
+	}
+
+	// Fallback to cwd
+	return startDir;
+}
+
+/**
+ * Find the CLI dist path relative to workspace
+ */
+function findCliDistPath(workspaceRoot: string): string | undefined {
+	const possiblePaths = [
+		join(workspaceRoot, "apps", "cli", "dist", "index.js"),
+		join(workspaceRoot, "dist", "index.js"),
+	];
+
+	for (const path of possiblePaths) {
+		if (existsSync(path)) {
+			return path;
+		}
+	}
+
+	return undefined;
 }
 
 /**

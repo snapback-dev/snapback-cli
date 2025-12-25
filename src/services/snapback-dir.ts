@@ -441,14 +441,8 @@ export async function saveGlobalConfig(config: GlobalConfig): Promise<void> {
 // UTILITY FUNCTIONS
 // =============================================================================
 
-/**
- * Generate a unique ID for sessions, learnings, etc.
- */
-export function generateId(prefix = ""): string {
-	const timestamp = Date.now().toString(36);
-	const random = Math.random().toString(36).substring(2, 8);
-	return prefix ? `${prefix}_${timestamp}${random}` : `${timestamp}${random}`;
-}
+// Re-export generateId from @snapback/contracts for backwards compatibility
+export { generateId } from "@snapback/contracts/id-generator";
 
 /**
  * Get workspace root by searching for .snapback/ or package.json
