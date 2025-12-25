@@ -431,9 +431,3 @@ export async function applyRecommendations(
 		}
 	}
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
-
-export { analyzeWorkspace, applyRecommendations, renderProfileSummary, renderGapSummary, renderRecommendations };
