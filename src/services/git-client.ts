@@ -122,7 +122,7 @@ export class GitClient {
 			}
 
 			return stdout
-				.split("\n")
+				.split(/\r?\n/) // Cross-platform: handles both \n (Unix) and \r\n (Windows)
 				.filter(Boolean)
 				.map((line) => this.parseStatusLine(line));
 		} catch (error) {
@@ -180,7 +180,7 @@ export class GitClient {
 		let deletions = 0;
 		let files = 0;
 
-		for (const line of stdout.split("\n").filter(Boolean)) {
+		for (const line of stdout.split(/\r?\n/).filter(Boolean)) {
 			const [add, del] = line.split("\t");
 			if (add !== "-") additions += Number.parseInt(add, 10);
 			if (del !== "-") deletions += Number.parseInt(del, 10);

@@ -118,7 +118,7 @@ export async function check(options: CheckOptions = {}): Promise<number> {
 function getStagedFiles(): string[] {
 	try {
 		const output = execSync("git diff --cached --name-only", { encoding: "utf-8" });
-		return output.split("\n").filter(Boolean);
+		return output.split(/\r?\n/).filter(Boolean); // Cross-platform line endings
 	} catch (error) {
 		console.error("Failed to get staged files:", error);
 		return [];

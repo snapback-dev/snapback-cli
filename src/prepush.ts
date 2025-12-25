@@ -1,6 +1,6 @@
 // enforce reviewed-by for AI-tagged per policy
 
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 interface PrePushOptions {
 	enforceReviewedBy?: boolean;
@@ -34,12 +34,30 @@ export async function prepush(options: PrePushOptions = {}): Promise<number> {
 
 function getAITaggedCommits(): CommitInfo[] {
 	try {
-		// Get commits that are about to be pushed
-		const output = execSync("git log --oneline --grep='AI:' $(git merge-base HEAD @{u})..HEAD", {
+		// Cross-platform: avoid shell subshell syntax $(...) which doesn't work on Windows
+		// Step 1: Get merge base
+		const mergeBaseResult = spawnSync("git", ["merge-base", "HEAD", "@{u}"], {
 			encoding: "utf-8",
 		});
-		return output
-			.split("\n")
+
+		if (mergeBaseResult.status !== 0 || !mergeBaseResult.stdout.trim()) {
+			// No upstream set or other issue - no commits to check
+			return [];
+		}
+
+		const mergeBase = mergeBaseResult.stdout.trim();
+
+		// Step 2: Get AI-tagged commits in range
+		const logResult = spawnSync("git", ["log", "--oneline", "--grep=AI:", `${mergeBase}..HEAD`], {
+			encoding: "utf-8",
+		});
+
+		if (logResult.status !== 0 || !logResult.stdout.trim()) {
+			return [];
+		}
+
+		return logResult.stdout
+			.split(/\r?\n/) // Cross-platform line endings
 			.filter(Boolean)
 			.map((line) => {
 				const [hash, ...messageParts] = line.split(" ");
@@ -56,11 +74,14 @@ function getAITaggedCommits(): CommitInfo[] {
 
 function hasReviewedBy(commit: CommitInfo): boolean {
 	try {
-		// Get full commit message
-		const output = execSync(`git show -s --format=%B ${commit.hash}`, {
+		// Cross-platform: use spawnSync with array args instead of string interpolation
+		const result = spawnSync("git", ["show", "-s", "--format=%B", commit.hash], {
 			encoding: "utf-8",
 		});
-		return output.includes("Reviewed-by:");
+		if (result.status !== 0) {
+			return false;
+		}
+		return result.stdout.includes("Reviewed-by:");
 	} catch (error) {
 		console.error(`Failed to check reviewed-by for commit ${commit.hash}:`, error);
 		return false;

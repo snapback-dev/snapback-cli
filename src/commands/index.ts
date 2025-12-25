@@ -203,4 +203,4 @@ export { createUpgradeCommand } from "./upgrade";
  * snap wizard --force
  * ```
  */
-export { createWizardCommand } from "./wizard";
+export { createWizardCommand, runWizard } from "./wizard";

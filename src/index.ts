@@ -40,9 +40,12 @@ import {
 	createWizardCommand,
 	// MCP Server
 	mcpCommand,
+	runWizard,
 } from "./commands";
 // CLI-UX-002: Git Client for staged files
 import { GitClient, GitNotInstalledError, GitNotRepositoryError, isCodeFile } from "./services/git-client";
+import { isLoggedIn, isSnapbackInitialized } from "./services/snapback-dir";
+import { userState } from "./services/state";
 // Smart Errors UI
 import { displayUnknownCommandError } from "./ui/errors";
 // CLI-UX-001, 003, 004: UX Utilities
@@ -643,10 +646,77 @@ async function interactiveList() {
 	}
 }
 
+// =============================================================================
+// SMART ROUTER - Intelligent no-args behavior
+// =============================================================================
+
+/**
+ * Smart router for `snap` with no arguments.
+ * Routes based on CLI state:
+ * - First run → Launch wizard
+ * - Not authenticated → Prompt login
+ * - Not initialized → Prompt init
+ * - Otherwise → Show status dashboard
+ *
+ * @returns true if handled (caller should exit), false to continue normal parsing
+ */
+async function smartRouter(): Promise<boolean> {
+	// Only trigger for `snap` with no args (node, snap = 2 args)
+	if (process.argv.length > 2) {
+		return false;
+	}
+
+	const cwd = process.cwd();
+
+	try {
+		const isFirstRun = userState.isFirstRun();
+		const authenticated = await isLoggedIn();
+		const initialized = await isSnapbackInitialized(cwd);
+
+		if (isFirstRun) {
+			// First time user - run full wizard
+			await runWizard({ force: false });
+			return true;
+		}
+
+		if (!authenticated) {
+			console.log(chalk.yellow("Not logged in."));
+			console.log(chalk.gray("Run: snap login"));
+			console.log();
+			console.log(chalk.gray("Or run: snap wizard  for guided setup"));
+			return true;
+		}
+
+		if (!initialized) {
+			console.log(chalk.yellow("Workspace not initialized."));
+			console.log(chalk.gray("Run: snap init"));
+			console.log();
+			console.log(chalk.gray("Or run: snap wizard  for guided setup"));
+			return true;
+		}
+
+		// Show dashboard (status command)
+		const statusCommand = createStatusCommand();
+		await statusCommand.parseAsync(["node", "snap"]);
+		return true;
+	} catch {
+		// On any error, fall through to normal CLI behavior
+		return false;
+	}
+}
+
 // Only execute the CLI if this file is run directly
 if (import.meta.url === new URL(process.argv[1], `file://${process.platform === "win32" ? "/" : ""}`).href) {
-	const program = createCLI();
-	program.parseAsync(process.argv);
+	(async () => {
+		// Try smart routing first
+		if (await smartRouter()) {
+			process.exit(0);
+		}
+
+		// Otherwise, proceed with normal CLI parsing
+		const program = createCLI();
+		await program.parseAsync(process.argv);
+	})();
 }
 
 // Export the program for testing

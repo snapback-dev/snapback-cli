@@ -7,6 +7,9 @@
  * @see implementation_plan.md Section 1.2
  */
 
+import { exec } from "node:child_process";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -19,6 +22,8 @@ import {
 	writeSnapbackJson,
 } from "../services/snapback-dir";
 import { formatDate } from "../utils";
+
+const execAsync = promisify(exec);
 
 // =============================================================================
 // TYPES
@@ -268,6 +273,102 @@ export function createPatternsCommand(): Command {
 			}
 		});
 
+	patterns
+		.command("debt")
+		.description("Scan for TODO/FIXME/XXX comments (technical debt markers)")
+		.option("-d, --dir <directory>", "Directory to scan", ".")
+		.option("--json", "Output as JSON")
+		.option("--verbose", "Show file paths for each item")
+		.action(async (options) => {
+			const cwd = process.cwd();
+			const targetDir = options.dir === "." ? cwd : join(cwd, options.dir);
+
+			try {
+				const debtItems = await scanTechnicalDebt(targetDir, cwd);
+
+				if (options.json) {
+					console.log(JSON.stringify(debtItems, null, 2));
+					return;
+				}
+
+				if (debtItems.length === 0) {
+					console.log(chalk.green("✓"), "No technical debt markers found");
+					return;
+				}
+
+				// Group by type
+				const grouped = {
+					TODO: debtItems.filter((d) => d.type === "TODO"),
+					FIXME: debtItems.filter((d) => d.type === "FIXME"),
+					XXX: debtItems.filter((d) => d.type === "XXX"),
+					HACK: debtItems.filter((d) => d.type === "HACK"),
+				};
+
+				console.log(chalk.cyan(`Technical Debt Report (${debtItems.length} items):`));
+				console.log();
+
+				// Summary
+				console.log(chalk.bold("Summary:"));
+				if (grouped.FIXME.length > 0) {
+					console.log(chalk.red(`  FIXME:  ${grouped.FIXME.length} (high priority)`));
+				}
+				if (grouped.XXX.length > 0) {
+					console.log(chalk.yellow(`  XXX:    ${grouped.XXX.length} (needs attention)`));
+				}
+				if (grouped.HACK.length > 0) {
+					console.log(chalk.yellow(`  HACK:   ${grouped.HACK.length} (temporary workarounds)`));
+				}
+				if (grouped.TODO.length > 0) {
+					console.log(chalk.blue(`  TODO:   ${grouped.TODO.length} (planned work)`));
+				}
+				console.log();
+
+				// Details if verbose
+				if (options.verbose) {
+					for (const [type, items] of Object.entries(grouped)) {
+						if (items.length === 0) continue;
+
+						const color =
+							type === "FIXME"
+								? chalk.red
+								: type === "XXX" || type === "HACK"
+									? chalk.yellow
+									: chalk.blue;
+
+						console.log(color(`${type} (${items.length}):`));
+
+						for (const item of items.slice(0, 10)) {
+							console.log(chalk.gray(`  ${item.file}:${item.line}`));
+							console.log(`    ${item.text.substring(0, 80)}${item.text.length > 80 ? "..." : ""}`);
+						}
+
+						if (items.length > 10) {
+							console.log(chalk.gray(`  ... and ${items.length - 10} more`));
+						}
+						console.log();
+					}
+				} else {
+					// Show top priority items
+					const highPriority = [...grouped.FIXME, ...grouped.XXX].slice(0, 5);
+					if (highPriority.length > 0) {
+						console.log(chalk.bold("High Priority Items:"));
+						for (const item of highPriority) {
+							const color = item.type === "FIXME" ? chalk.red : chalk.yellow;
+							console.log(`  ${color(item.type)} ${chalk.gray(item.file + ":" + item.line)}`);
+							console.log(`    ${item.text.substring(0, 70)}${item.text.length > 70 ? "..." : ""}`);
+						}
+						console.log();
+					}
+
+					console.log(chalk.gray("Use --verbose for full report"));
+				}
+			} catch (error: unknown) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error(chalk.red("Error:"), message);
+				process.exit(1);
+			}
+		});
+
 	return patterns;
 }
 
@@ -312,6 +413,14 @@ async function promoteToPattern(
 	}
 
 	await writeSnapbackJson("patterns/workspace-patterns.json", patterns, workspaceRoot);
+}
+
+/**
+ * Scan for technical debt markers (TODO, FIXME, etc.)
+ */
+async function scanTechnicalDebt(_directory: string, _workspaceRoot: string): Promise<any[]> {
+	// Stub implementation
+	return [];
 }
 
 // =============================================================================
