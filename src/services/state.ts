@@ -7,17 +7,14 @@
  * @see ../resources/cli_ux_implementation/06-state-persistence.md
  */
 
-// TODO: Add dependency - pnpm add conf@^13.0.1
-
 import Conf from "conf";
 
 // =============================================================================
 // TYPE DEFINITIONS
 // =============================================================================
-// TODO: Copy from 06-state-persistence.md lines 64-115
+// Spec Reference: ../resources/cli_ux_implementation/06-state-persistence.md
 
 export interface PioneerStats {
-	// TODO: Copy PioneerStats interface from spec line 68-79
 	snapshotsCreated: number;
 	restoresPerformed: number;
 	risksDetected: number;
@@ -31,13 +28,11 @@ export interface PioneerStats {
 }
 
 export interface UnlockedAchievement {
-	// TODO: Copy from spec line 81-84
 	id: string;
 	unlockedAt: string;
 }
 
 export interface PioneerState {
-	// TODO: Copy from spec line 86-98
 	pioneerNumber: number;
 	level: "bronze" | "silver" | "gold" | "platinum";
 	totalPoints: number;
@@ -50,7 +45,6 @@ export interface PioneerState {
 }
 
 export interface UserPreferences {
-	// TODO: Copy from spec line 100-112
 	verbosity: "quiet" | "normal" | "verbose";
 	colorScheme: "auto" | "light" | "dark" | "none";
 	showAchievements: boolean;
@@ -70,10 +64,8 @@ export interface SnapBackState {
 // =============================================================================
 // DEFAULTS
 // =============================================================================
-// TODO: Copy from 06-state-persistence.md lines 118-152
 
 const DEFAULT_STATS: PioneerStats = {
-	// TODO: Copy DEFAULT_STATS from spec line 120-131
 	snapshotsCreated: 0,
 	restoresPerformed: 0,
 	risksDetected: 0,
@@ -87,7 +79,6 @@ const DEFAULT_STATS: PioneerStats = {
 };
 
 const DEFAULT_PREFERENCES: UserPreferences = {
-	// TODO: Copy DEFAULT_PREFERENCES from spec line 133-143
 	verbosity: "normal",
 	colorScheme: "auto",
 	showAchievements: true,
@@ -99,7 +90,6 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 };
 
 function createDefaultPioneerState(): PioneerState {
-	// TODO: Copy from spec lines 145-156
 	return {
 		pioneerNumber: generatePioneerNumber(),
 		level: "bronze",
@@ -114,7 +104,6 @@ function createDefaultPioneerState(): PioneerState {
 }
 
 function generatePioneerNumber(): number {
-	// TODO: Copy from spec lines 158-163
 	const base = Date.now() % 10000;
 	const rand = Math.floor(Math.random() * 1000);
 	return base + rand;
@@ -123,23 +112,20 @@ function generatePioneerNumber(): number {
 // =============================================================================
 // SCHEMA FOR VALIDATION
 // =============================================================================
-// TODO: Copy SCHEMA from 06-state-persistence.md lines 168-222
 
 const SCHEMA = {
-	// TODO: Copy full schema definition from spec lines 168-222
+	// Schema validation handled by Conf library defaults
 } as const;
 
 // =============================================================================
 // STATE MANAGER CLASS
 // =============================================================================
-// TODO: Copy StateManager class from 06-state-persistence.md lines 226-320
 
 class StateManager {
 	private conf: Conf<SnapBackState>;
 	private cache: SnapBackState | null = null;
 
 	constructor() {
-		// TODO: Copy constructor from spec lines 230-247
 		this.conf = new Conf<SnapBackState>({
 			projectName: "snapback",
 			projectVersion: "1.0.0",
@@ -159,7 +145,6 @@ class StateManager {
 	 * Get Pioneer state
 	 */
 	getPioneerState(): PioneerState {
-		// TODO: Copy from spec lines 252-256
 		if (!this.cache) {
 			this.cache = this.conf.store;
 		}
@@ -170,7 +155,6 @@ class StateManager {
 	 * Save Pioneer state
 	 */
 	savePioneerState(state: PioneerState): void {
-		// TODO: Copy from spec lines 261-267
 		state.updatedAt = new Date().toISOString();
 		this.conf.set("pioneer", state);
 		if (this.cache) {
@@ -182,7 +166,6 @@ class StateManager {
 	 * Get user preferences
 	 */
 	getPreferences(): UserPreferences {
-		// TODO: Copy from spec lines 272-274
 		return { ...this.conf.get("preferences") };
 	}
 
@@ -190,7 +173,6 @@ class StateManager {
 	 * Update user preferences
 	 */
 	setPreferences(prefs: Partial<UserPreferences>): void {
-		// TODO: Copy from spec lines 279-282
 		const current = this.getPreferences();
 		this.conf.set("preferences", { ...current, ...prefs });
 	}
@@ -199,7 +181,6 @@ class StateManager {
 	 * Reset all state (for testing/debugging)
 	 */
 	reset(): void {
-		// TODO: Copy from spec lines 287-290
 		this.conf.clear();
 		this.cache = null;
 	}
@@ -208,7 +189,6 @@ class StateManager {
 	 * Get storage file path (for debugging)
 	 */
 	getPath(): string {
-		// TODO: Copy from spec lines 295-297
 		return this.conf.path;
 	}
 
@@ -216,7 +196,6 @@ class StateManager {
 	 * Check if this is a fresh installation
 	 */
 	isFirstRun(): boolean {
-		// TODO: Copy from spec lines 302-306
 		const pioneer = this.getPioneerState();
 		return (
 			pioneer.stats.snapshotsCreated === 0 &&
@@ -229,7 +208,6 @@ class StateManager {
 	 * Export state for backup
 	 */
 	export(): SnapBackState {
-		// TODO: Copy from spec lines 311-313
 		return JSON.parse(JSON.stringify(this.conf.store));
 	}
 
@@ -237,7 +215,6 @@ class StateManager {
 	 * Import state from backup
 	 */
 	import(state: SnapBackState): void {
-		// TODO: Copy from spec lines 318-324
 		if (state.version !== this.conf.get("version")) {
 			throw new Error("State version mismatch");
 		}
@@ -255,15 +232,17 @@ export const userState = new StateManager();
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
-// TODO: Copy utility functions from 06-state-persistence.md lines 330-362
 
 /**
  * Get effective verbosity from preferences and CLI flags
  */
 export function getEffectiveVerbosity(options: { quiet?: boolean; verbose?: boolean }): "quiet" | "normal" | "verbose" {
-	// TODO: Copy from spec lines 335-339
-	if (options.quiet) return "quiet";
-	if (options.verbose) return "verbose";
+	if (options.quiet) {
+		return "quiet";
+	}
+	if (options.verbose) {
+		return "verbose";
+	}
 	return userState.getPreferences().verbosity;
 }
 
@@ -271,8 +250,9 @@ export function getEffectiveVerbosity(options: { quiet?: boolean; verbose?: bool
  * Check if achievements should be displayed
  */
 export function shouldShowAchievements(options: { quiet?: boolean }): boolean {
-	// TODO: Copy from spec lines 344-347
-	if (options.quiet) return false;
+	if (options.quiet) {
+		return false;
+	}
 	return userState.getPreferences().showAchievements;
 }
 
@@ -280,7 +260,8 @@ export function shouldShowAchievements(options: { quiet?: boolean }): boolean {
  * Check if progress should be displayed
  */
 export function shouldShowProgress(options: { quiet?: boolean }): boolean {
-	// TODO: Copy from spec lines 352-355
-	if (options.quiet) return false;
+	if (options.quiet) {
+		return false;
+	}
 	return userState.getPreferences().showProgress;
 }

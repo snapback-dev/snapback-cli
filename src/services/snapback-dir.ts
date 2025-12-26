@@ -192,7 +192,9 @@ export async function isSnapbackInitialized(workspaceRoot?: string): Promise<boo
 export async function isLoggedIn(): Promise<boolean> {
 	try {
 		const credentials = await readGlobalJson<GlobalCredentials>("credentials.json");
-		if (!credentials?.accessToken) return false;
+		if (!credentials?.accessToken) {
+			return false;
+		}
 
 		// Check if token is expired
 		if (credentials.expiresAt) {
@@ -243,7 +245,7 @@ export async function appendSnapbackJsonl<T extends object>(
 ): Promise<void> {
 	const fullPath = getWorkspacePath(relativePath, workspaceRoot);
 	await mkdir(dirname(fullPath), { recursive: true });
-	await appendFile(fullPath, JSON.stringify(data) + "\n");
+	await appendFile(fullPath, `${JSON.stringify(data)}\n`);
 }
 
 /**
@@ -402,24 +404,48 @@ export async function getViolations(workspaceRoot?: string): Promise<ViolationEn
 
 /**
  * Get credentials
+ * @deprecated Use getCredentialsSecure from secure-credentials.ts for production
  */
 export async function getCredentials(): Promise<GlobalCredentials | null> {
-	return readGlobalJson<GlobalCredentials>("credentials.json");
+	// Try secure credentials first, fall back to legacy
+	try {
+		const { getCredentialsSecure } = await import("./secure-credentials");
+		return await getCredentialsSecure();
+	} catch {
+		// Fallback to legacy plain text (development mode)
+		return readGlobalJson<GlobalCredentials>("credentials.json");
+	}
 }
 
 /**
  * Save credentials
+ * @deprecated Use saveCredentialsSecure from secure-credentials.ts for production
  */
 export async function saveCredentials(credentials: GlobalCredentials): Promise<void> {
-	await createGlobalDirectory();
-	await writeGlobalJson("credentials.json", credentials);
+	// Try secure credentials first, fall back to legacy
+	try {
+		const { saveCredentialsSecure } = await import("./secure-credentials");
+		return await saveCredentialsSecure(credentials);
+	} catch {
+		// Fallback to legacy plain text (development mode)
+		await createGlobalDirectory();
+		await writeGlobalJson("credentials.json", credentials);
+	}
 }
 
 /**
  * Clear credentials (logout)
+ * @deprecated Use clearCredentialsSecure from secure-credentials.ts for production
  */
 export async function clearCredentials(): Promise<void> {
-	await deleteGlobalJson("credentials.json");
+	// Try secure credentials first, fall back to legacy
+	try {
+		const { clearCredentialsSecure } = await import("./secure-credentials");
+		return await clearCredentialsSecure();
+	} catch {
+		// Fallback to legacy plain text (development mode)
+		await deleteGlobalJson("credentials.json");
+	}
 }
 
 /**
