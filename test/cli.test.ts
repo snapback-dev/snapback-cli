@@ -41,19 +41,23 @@ vi.mock("@snapback/storage", () => ({
 	FileSystemStorage: vi.fn(() => mockStorage),
 }));
 
-// Mock fs/promises
-const mockFs = {
-	readFile: vi.fn(),
-};
+// Mock fs/promises - use importOriginal to keep real implementations
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		readFile: vi.fn(),
+	};
+});
 
-vi.mock("node:fs/promises", () => mockFs);
-
-// Mock path
-const mockPath = {
-	resolve: vi.fn((_, file) => `/resolved/path/${file}`),
-};
-
-vi.mock("node:path", () => mockPath);
+// Mock path - use importOriginal to keep real implementations (like dirname)
+vi.mock("node:path", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:path")>();
+	return {
+		...actual,
+		resolve: vi.fn((_, file) => `/resolved/path/${file}`),
+	};
+});
 
 describe("CLI Unit Tests", () => {
 	beforeEach(() => {

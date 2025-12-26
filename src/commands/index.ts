@@ -133,6 +133,28 @@ export { mcpCommand } from "./mcp";
 export { createToolsCommand } from "./tools";
 
 // =============================================================================
+// DAEMON COMMANDS
+// =============================================================================
+// These commands manage the SnapBack daemon lifecycle.
+// The daemon provides a long-running process for CLI/Extension communication.
+//
+// @see apps/cli/daemon_implementation.md for architecture
+
+/**
+ * Daemon command - Manage SnapBack daemon
+ *
+ * @example
+ * ```bash
+ * snap daemon start --detach
+ * snap daemon status
+ * snap daemon stop
+ * snap daemon restart
+ * snap daemon ping
+ * ```
+ */
+export { registerDaemonCommands } from "./daemon";
+
+// =============================================================================
 // POLISH COMMANDS (Phase 6)
 // =============================================================================
 // These commands complete the CLI experience with diagnostics, updates, and config.

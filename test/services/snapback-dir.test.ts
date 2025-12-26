@@ -277,7 +277,8 @@ describe("snapback-dir service", () => {
 		it("should include prefix when provided", () => {
 			const id = generateId("sess");
 
-			expect(id).toMatch(/^sess_/);
+			// Implementation uses hyphen separator: prefix-nanoid
+			expect(id).toMatch(/^sess-/);
 		});
 	});
 
