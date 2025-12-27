@@ -40,6 +40,7 @@ import {
 const DEFAULT_API_URL = process.env.SNAPBACK_API_URL || "https://api.snapback.dev";
 const AUTH_CALLBACK_PORT = 51234;
 const AUTH_TIMEOUT_MS = 120000; // 2 minutes
+const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
 
 // =============================================================================
 // COMMAND DEFINITIONS
@@ -460,6 +461,117 @@ async function pollForToken(deviceCode: string, interval: number, expiresIn: num
 }
 
 // =============================================================================
+// TOKEN REFRESH
+// =============================================================================
+
+/**
+ * Refresh the access token using the refresh token.
+ * FIX 6: Proactive token refresh before expiry.
+ *
+ * @returns Updated credentials if refresh was successful, null otherwise
+ */
+async function refreshAccessToken(credentials: GlobalCredentials): Promise<GlobalCredentials | null> {
+	if (!credentials.refreshToken) {
+		return null;
+	}
+
+	try {
+		const response = await fetch(`${DEFAULT_API_URL}/auth/refresh`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ refreshToken: credentials.refreshToken }),
+		});
+
+		if (!response.ok) {
+			// Refresh token is invalid or expired
+			return null;
+		}
+
+		const data = (await response.json()) as {
+			accessToken: string;
+			refreshToken?: string;
+			expiresIn: number;
+		};
+
+		const newCredentials: GlobalCredentials = {
+			...credentials,
+			accessToken: data.accessToken,
+			refreshToken: data.refreshToken ?? credentials.refreshToken,
+			expiresAt: new Date(Date.now() + data.expiresIn * 1000).toISOString(),
+		};
+
+		await saveCredentials(newCredentials);
+		return newCredentials;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Check if the token needs refresh (expires within threshold).
+ */
+function needsTokenRefresh(credentials: GlobalCredentials): boolean {
+	if (!credentials.expiresAt) {
+		return false; // No expiry set (e.g., API key auth)
+	}
+
+	const expiresAt = new Date(credentials.expiresAt).getTime();
+	const now = Date.now();
+	const timeUntilExpiry = expiresAt - now;
+
+	return timeUntilExpiry > 0 && timeUntilExpiry < TOKEN_REFRESH_THRESHOLD_MS;
+}
+
+/**
+ * Check if the token is expired.
+ */
+function isTokenExpired(credentials: GlobalCredentials): boolean {
+	if (!credentials.expiresAt) {
+		return false; // No expiry set (e.g., API key auth)
+	}
+
+	const expiresAt = new Date(credentials.expiresAt);
+	return expiresAt < new Date();
+}
+
+/**
+ * Ensure valid credentials are available.
+ * Automatically refreshes token if it's about to expire.
+ *
+ * @returns Valid credentials or null if not logged in
+ */
+export async function ensureValidCredentials(): Promise<GlobalCredentials | null> {
+	const credentials = await getCredentials();
+
+	if (!credentials) {
+		return null;
+	}
+
+	// Check if expired
+	if (isTokenExpired(credentials)) {
+		// Try to refresh
+		const refreshed = await refreshAccessToken(credentials);
+		if (refreshed) {
+			return refreshed;
+		}
+		// Refresh failed, need to re-login
+		return null;
+	}
+
+	// Check if needs refresh (about to expire)
+	if (needsTokenRefresh(credentials)) {
+		const refreshed = await refreshAccessToken(credentials);
+		if (refreshed) {
+			return refreshed;
+		}
+		// Refresh failed but token is still valid, return original
+		return credentials;
+	}
+
+	return credentials;
+}
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -567,4 +679,12 @@ function errorPage(error: string): string {
 // EXPORTS
 // =============================================================================
 
-export { loginWithApiKey, loginWithBrowser, loginWithDeviceCode };
+// Note: ensureValidCredentials is already exported above with 'export async function'
+export {
+	isTokenExpired,
+	loginWithApiKey,
+	loginWithBrowser,
+	loginWithDeviceCode,
+	needsTokenRefresh,
+	refreshAccessToken,
+};
