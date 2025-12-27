@@ -22,7 +22,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import { createServer, type Server, type Socket } from "node:net";
 import { platform } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
+
+import { Intelligence } from "@snapback/intelligence";
 
 import {
 	DEFAULT_HEALTH_PORT,
@@ -61,6 +63,38 @@ import {
 // =============================================================================
 
 const IS_WINDOWS = platform() === "win32";
+
+// =============================================================================
+// INTELLIGENCE SINGLETON
+// =============================================================================
+
+/**
+ * Intelligence instances per workspace (singleton pattern for cross-surface coordination)
+ */
+const intelligenceInstances = new Map<string, Intelligence>();
+
+/**
+ * Get or create Intelligence instance for a workspace
+ */
+function getIntelligence(workspaceRoot: string): Intelligence {
+	if (!intelligenceInstances.has(workspaceRoot)) {
+		const intel = new Intelligence({
+			rootDir: workspaceRoot,
+			enableSemanticSearch: false,
+			enableLearningLoop: true,
+			patternsDir: ".snapback/patterns",
+			learningsDir: ".snapback/learnings",
+			constraintsFile: ".snapback/constraints.json",
+			// Session persistence for cross-surface coordination (Extension, MCP, CLI, Daemon)
+			sessionPersistence: {
+				path: join(workspaceRoot, ".snapback/session/sessions.jsonl"),
+				autosave: true,
+			},
+		});
+		intelligenceInstances.set(workspaceRoot, intel);
+	}
+	return intelligenceInstances.get(workspaceRoot)!;
+}
 
 // =============================================================================
 // CONFIGURATION
@@ -688,6 +722,9 @@ export class SnapBackDaemon extends EventEmitter {
 			case "session.status":
 				return this.handleSessionStatus(params, requestId);
 
+			case "session.changes":
+				return this.handleSessionChanges(params, requestId);
+
 			case "snapshot.create":
 				return this.handleSnapshotCreate(params, requestId);
 
@@ -880,6 +917,117 @@ export class SnapBackDaemon extends EventEmitter {
 			filesModified: 0,
 			snapshotCount: ctx.snapshotCount,
 		};
+	}
+
+	private async handleSessionChanges(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const {
+			workspace,
+			includeDiff: _includeDiff,
+			filterFiles,
+			includeAIAttribution = true,
+		} = params as {
+			workspace: string;
+			includeDiff?: boolean;
+			filterFiles?: string[];
+			includeAIAttribution?: boolean;
+		};
+		// Note: _includeDiff is reserved for future diff functionality
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		// Validate filter file paths if provided
+		if (filterFiles && Array.isArray(filterFiles)) {
+			validatePaths(workspace, filterFiles);
+		}
+
+		const ctx = this.workspaces.get(workspace);
+		if (!ctx || !ctx.sessionActive || !ctx.currentTaskId) {
+			// No active session, return empty
+			return {
+				files: [],
+				totalLinesChanged: 0,
+				riskAssessment: {
+					overallRisk: "low" as const,
+				},
+			};
+		}
+
+		// Query Intelligence for file modifications (shared across Extension, MCP, CLI, Daemon)
+		try {
+			const intel = getIntelligence(workspace);
+			const modifications = intel.getFileModifications(ctx.currentTaskId, ctx.lastActivity);
+
+			// Map modifications to daemon format
+			let files = modifications.map((mod) => {
+				const relativePath = mod.path.startsWith(workspace) ? relative(workspace, mod.path) : mod.path;
+				return {
+					path: relativePath,
+					status: (mod.type === "create" ? "created" : mod.type === "delete" ? "deleted" : "modified") as
+						| "created"
+						| "modified"
+						| "deleted",
+					linesChanged: mod.linesChanged,
+					aiAttributed: includeAIAttribution ? mod.aiAttributed : undefined,
+				};
+			});
+
+			// Apply filter if provided
+			if (filterFiles && filterFiles.length > 0) {
+				files = files.filter((f) =>
+					filterFiles.some((filter) => f.path.includes(filter) || filter.includes(f.path)),
+				);
+			}
+
+			// Calculate totals and risk
+			const totalLinesChanged = files.reduce((sum, f) => sum + f.linesChanged, 0);
+			const aiAttributedFiles = files.filter((f) => f.aiAttributed).length;
+
+			// Assess risk based on changes
+			let overallRisk: "low" | "medium" | "high" = "low";
+			const criticalPatterns = ["auth", "payment", "security", "config", "migration", "env"];
+			const hasCriticalFiles = files.some((f) =>
+				criticalPatterns.some((pattern) => f.path.toLowerCase().includes(pattern)),
+			);
+			const highAiRatio = files.length >= 3 && aiAttributedFiles / files.length > 0.7;
+
+			if (hasCriticalFiles && highAiRatio) {
+				overallRisk = "high";
+			} else if (hasCriticalFiles || highAiRatio || totalLinesChanged > 500) {
+				overallRisk = "medium";
+			}
+
+			this.logger.debug("Session changes retrieved", {
+				requestId,
+				workspace,
+				fileCount: files.length,
+				totalLinesChanged,
+				overallRisk,
+			});
+
+			return {
+				files,
+				totalLinesChanged,
+				riskAssessment: {
+					overallRisk,
+				},
+			};
+		} catch (err) {
+			this.logger.warn("Failed to get session changes from Intelligence", {
+				requestId,
+				error: String(err),
+			});
+
+			// Fall back to empty response
+			return {
+				files: [],
+				totalLinesChanged: 0,
+				riskAssessment: {
+					overallRisk: "low" as const,
+				},
+			};
+		}
 	}
 
 	private async handleSnapshotCreate(params: Record<string, unknown>, requestId: string): Promise<unknown> {
