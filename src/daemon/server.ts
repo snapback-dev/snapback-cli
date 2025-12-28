@@ -1358,7 +1358,7 @@ export class SnapBackDaemon extends EventEmitter {
 					source: source || "daemon",
 					timestamp: new Date().toISOString(),
 				};
-				await writeFile(learningsPath, JSON.stringify(entry) + "\n", { flag: "a" });
+				await writeFile(learningsPath, `${JSON.stringify(entry)}\n`, { flag: "a" });
 			} catch (writeErr) {
 				this.logger.error("Failed to write learning", { requestId, error: String(writeErr) });
 			}
@@ -1520,10 +1520,18 @@ export class SnapBackDaemon extends EventEmitter {
 		if (files && files.length > 0) {
 			for (const file of files) {
 				const lowerPath = file.toLowerCase();
-				if (lowerPath.includes("auth") && !riskAreas.includes("auth")) riskAreas.push("auth");
-				if (lowerPath.includes("payment") && !riskAreas.includes("payment")) riskAreas.push("payment");
-				if (lowerPath.includes("security") && !riskAreas.includes("security")) riskAreas.push("security");
-				if (lowerPath.includes("config") && !riskAreas.includes("config")) riskAreas.push("config");
+				if (lowerPath.includes("auth") && !riskAreas.includes("auth")) {
+					riskAreas.push("auth");
+				}
+				if (lowerPath.includes("payment") && !riskAreas.includes("payment")) {
+					riskAreas.push("payment");
+				}
+				if (lowerPath.includes("security") && !riskAreas.includes("security")) {
+					riskAreas.push("security");
+				}
+				if (lowerPath.includes("config") && !riskAreas.includes("config")) {
+					riskAreas.push("config");
+				}
 			}
 		}
 
