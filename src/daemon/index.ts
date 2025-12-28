@@ -22,7 +22,13 @@ export {
 	SOCKET_PERMISSIONS,
 	STATE_FILE,
 } from "./constants.js";
-
+// Push Architecture exports (stress_test_remediation.md)
+export {
+	ContextWriter,
+	type CtxFile,
+	createContextWriter,
+	type WorkspaceState,
+} from "./context-writer.js";
 // Error exports
 export {
 	ConnectionError,
@@ -39,13 +45,10 @@ export {
 	toDaemonError,
 	WorkspaceNotFoundError,
 } from "./errors.js";
-
 // Logger exports
 export { DaemonLogger, generateRequestId, initLogger } from "./logger.js";
-
 // Path validator exports
 export { validatePath, validatePaths } from "./path-validator.js";
-
 // Platform exports
 export {
 	acquireLock,
@@ -83,7 +86,6 @@ export {
 	writePidFile,
 	writePidFileSync,
 } from "./platform.js";
-
 // Protocol exports
 export {
 	type BeginSessionParams,
@@ -107,6 +109,14 @@ export {
 	serializeResponse,
 	type WorkspaceContext,
 } from "./protocol.js";
-
 // Server exports
 export { type DaemonConfig, SnapBackDaemon } from "./server.js";
+
+// Session Tracking exports (fixes dogfooding issues)
+export {
+	clearSessionTracker,
+	type FileAccess,
+	getSessionTracker,
+	SessionFileTracker,
+	type SessionSummary,
+} from "./session-file-tracker.js";
