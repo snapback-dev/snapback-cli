@@ -45,6 +45,7 @@ import {
 	toDaemonError,
 	WorkspaceNotFoundError,
 } from "./errors.js";
+import { disposeFileWatcherService, type FileChangeEvent, getFileWatcherService } from "./file-watcher.js";
 import { type DaemonLogger, generateRequestId, initLogger } from "./logger.js";
 import { validatePath, validatePaths } from "./path-validator.js";
 import { acquireLock, getDaemonDir, getLogPath, releaseLock } from "./platform.js";
@@ -248,6 +249,9 @@ export class SnapBackDaemon extends EventEmitter {
 			// Restore persisted state
 			await this.restoreState();
 
+			// Initialize file watcher service and wire up events
+			this.initFileWatcherEvents();
+
 			this.logger.info("Daemon started", {
 				pid: process.pid,
 				socket: this.config.socketPath,
@@ -313,6 +317,9 @@ export class SnapBackDaemon extends EventEmitter {
 			socket.destroy();
 		}
 		this.connections.clear();
+
+		// Close all file watchers
+		await disposeFileWatcherService();
 
 		// Cleanup files (Unix only for socket - Windows named pipes auto-cleanup)
 		try {
@@ -746,6 +753,12 @@ export class SnapBackDaemon extends EventEmitter {
 			case "validate.quick":
 				return this.handleValidateQuick(params, requestId);
 
+			case "watch.subscribe":
+				return this.handleWatchSubscribe(params, requestId);
+
+			case "watch.unsubscribe":
+				return this.handleWatchUnsubscribe(params, requestId);
+
 			default:
 				throw new MethodNotFoundError(method);
 		}
@@ -798,10 +811,11 @@ export class SnapBackDaemon extends EventEmitter {
 	}
 
 	private async handleSessionBegin(params: Record<string, unknown>, requestId: string): Promise<unknown> {
-		const { workspace, task, files } = params as {
+		const { workspace, task, files, keywords } = params as {
 			workspace: string;
 			task: string;
 			files?: string[];
+			keywords?: string[];
 		};
 
 		// Validate required params
@@ -836,25 +850,161 @@ export class SnapBackDaemon extends EventEmitter {
 		const taskId = `task_${Date.now().toString(36)}_${requestId}`;
 		ctx.sessionActive = true;
 		ctx.currentTaskId = taskId;
+		ctx.sessionStartedAt = Date.now();
 		ctx.lastActivity = Date.now();
 
-		this.logger.info("Session started", { requestId, workspace, taskId });
+		// Get Intelligence instance for cross-surface coordination
+		const intel = getIntelligence(workspace);
+
+		// Start Intelligence session with same task ID (enables Extension, MCP, CLI to share state)
+		intel.startSession(taskId, {
+			workspaceId: workspace,
+			tags: keywords || [],
+		});
+
+		// Extract keywords from task if not provided
+		const effectiveKeywords =
+			keywords && keywords.length > 0
+				? keywords
+				: task
+						.toLowerCase()
+						.split(/\s+/)
+						.filter((w) => w.length > 3);
+
+		// Get context from Intelligence (patterns, constraints, learnings)
+		let patterns: Array<{ name: string; description: string }> = [];
+		const constraints: Array<{ domain: string; name: string; value: string | number; description: string }> = [];
+		let learnings: Array<{ type: string; trigger: string; action: string; relevanceScore: number }> = [];
+
+		try {
+			const contextResult = await intel.getContext({
+				task,
+				keywords: effectiveKeywords,
+			});
+
+			// Extract patterns from context
+			if (contextResult.patterns) {
+				const patternLines = contextResult.patterns.split("\n").filter(Boolean);
+				patterns = patternLines.slice(0, 5).map((line) => ({
+					name: line.substring(0, 50),
+					description: line,
+				}));
+			}
+
+			// Get learnings relevant to keywords
+			const learningsResult = intel.queryLearnings(effectiveKeywords);
+			learnings = learningsResult.slice(0, 5).map((l, index) => ({
+				type: l.type,
+				trigger: Array.isArray(l.trigger) ? l.trigger.join(", ") : l.trigger,
+				action: l.action,
+				// Score based on position (earlier = more relevant)
+				relevanceScore: (learningsResult.length - index) / learningsResult.length,
+			}));
+		} catch (err) {
+			this.logger.warn("Failed to get Intelligence context", { requestId, error: String(err) });
+		}
+
+		// Get constraints from context file
+		try {
+			const ctxPath = join(workspace, ".snapback", "ctx", "context.json");
+			if (existsSync(ctxPath)) {
+				const ctxContent = JSON.parse(await readFile(ctxPath, "utf8"));
+				if (ctxContent.constraints) {
+					for (const [domain, domainConstraints] of Object.entries(ctxContent.constraints)) {
+						for (const [name, constraint] of Object.entries(domainConstraints as Record<string, any>)) {
+							constraints.push({
+								domain,
+								name,
+								value: constraint.max || constraint.value,
+								description: constraint.description || "",
+							});
+						}
+					}
+				}
+			}
+		} catch {
+			this.logger.debug("No constraints file found", { requestId, workspace });
+		}
+
+		// Assess risk based on files
+		const riskAreas: string[] = [];
+		const recommendations: string[] = [];
+
+		if (files && files.length > 0) {
+			for (const file of files) {
+				const lowerPath = file.toLowerCase();
+				if ((lowerPath.includes("auth") || lowerPath.includes("login")) && !riskAreas.includes("auth")) {
+					riskAreas.push("auth");
+					recommendations.push("Test with both valid and invalid credentials");
+				}
+				if ((lowerPath.includes("payment") || lowerPath.includes("stripe")) && !riskAreas.includes("payment")) {
+					riskAreas.push("payment");
+					recommendations.push("Use test mode/sandbox for payment testing");
+				}
+				if (
+					(lowerPath.includes("database") || lowerPath.includes("migration")) &&
+					!riskAreas.includes("database")
+				) {
+					riskAreas.push("database");
+					recommendations.push("Verify migrations can be rolled back");
+				}
+				if ((lowerPath.includes("config") || lowerPath.includes(".env")) && !riskAreas.includes("config")) {
+					riskAreas.push("config");
+					recommendations.push("Ensure secrets are not committed");
+				}
+				if (
+					(lowerPath.includes("security") || lowerPath.includes("crypto")) &&
+					!riskAreas.includes("security")
+				) {
+					riskAreas.push("security");
+				}
+			}
+			if (files.length >= 5) {
+				recommendations.push("Consider breaking into smaller focused changes");
+			}
+		}
+
+		// Determine overall risk
+		const criticalAreas = ["auth", "payment", "security"];
+		const hasCritical = riskAreas.some((a) => criticalAreas.includes(a));
+		const overallRisk: "low" | "medium" | "high" = hasCritical
+			? "high"
+			: riskAreas.length >= 2
+				? "medium"
+				: riskAreas.length > 0
+					? "medium"
+					: "low";
+
+		this.logger.info("Session started with Intelligence", {
+			requestId,
+			workspace,
+			taskId,
+			patternsCount: patterns.length,
+			learningsCount: learnings.length,
+			overallRisk,
+		});
 
 		return {
 			taskId,
 			snapshot: {
 				created: false,
-				reason: "Auto-snapshot disabled in daemon mode",
+				reason:
+					overallRisk === "high"
+						? "Consider creating a safety snapshot"
+						: "Auto-snapshot available on request",
 			},
-			patterns: [],
-			constraints: [],
-			learnings: [],
+			patterns,
+			constraints,
+			learnings,
 			riskAssessment: {
-				overallRisk: "low",
-				riskAreas: [],
-				recommendations: [],
+				overallRisk,
+				riskAreas,
+				recommendations,
 			},
 			nextActions: [
+				...(overallRisk === "high"
+					? [{ tool: "snapshot_create", priority: 1, reason: "Create safety snapshot for high-risk changes" }]
+					: []),
 				{ tool: "quick_check", priority: 2, reason: "Validate changes" },
 				{ tool: "review_work", priority: 4, reason: "Review before commit" },
 			],
@@ -876,16 +1026,52 @@ export class SnapBackDaemon extends EventEmitter {
 			throw new WorkspaceNotFoundError(workspace);
 		}
 
-		const duration = Date.now() - ctx.lastActivity;
+		const sessionStartedAt = ctx.sessionStartedAt || ctx.lastActivity;
+		const duration = Date.now() - sessionStartedAt;
+		const taskId = ctx.currentTaskId;
+
+		// Get Intelligence instance for session data
+		const intel = getIntelligence(workspace);
+
+		// Get file modifications from this session
+		let filesModified = 0;
+		let linesChanged = 0;
+
+		if (taskId) {
+			try {
+				const modifications = intel.getFileModifications(taskId, sessionStartedAt);
+				filesModified = modifications.length;
+				linesChanged = modifications.reduce((sum, m) => sum + m.linesChanged, 0);
+			} catch (err) {
+				this.logger.warn("Failed to get session modifications", { requestId, error: String(err) });
+			}
+
+			// End Intelligence session
+			try {
+				intel.endSession(taskId);
+			} catch (err) {
+				this.logger.warn("Failed to end Intelligence session", { requestId, error: String(err) });
+			}
+		}
+
+		// Clear session state
 		ctx.sessionActive = false;
 		ctx.currentTaskId = undefined;
+		ctx.sessionStartedAt = undefined;
 
-		this.logger.info("Session ended", { requestId, workspace, outcome, duration });
+		this.logger.info("Session ended with Intelligence", {
+			requestId,
+			workspace,
+			outcome,
+			duration,
+			filesModified,
+			linesChanged,
+		});
 
 		return {
 			summary: {
-				filesModified: 0,
-				linesChanged: 0,
+				filesModified,
+				linesChanged,
 				duration,
 			},
 			snapshot: { created: false },
@@ -1118,11 +1304,12 @@ export class SnapBackDaemon extends EventEmitter {
 	}
 
 	private async handleLearningAdd(params: Record<string, unknown>, requestId: string): Promise<unknown> {
-		const { workspace, type, trigger, action } = params as {
+		const { workspace, type, trigger, action, source } = params as {
 			workspace: string;
 			type: string;
 			trigger: string;
 			action: string;
+			source?: string;
 		};
 
 		if (!workspace || typeof workspace !== "string") {
@@ -1140,7 +1327,42 @@ export class SnapBackDaemon extends EventEmitter {
 
 		const learningId = `learn_${Date.now().toString(36)}_${requestId}`;
 
-		this.logger.info("Learning added", { requestId, workspace, learningId, type });
+		// Use Intelligence to persist the learning
+		try {
+			const intel = getIntelligence(workspace);
+			await intel.recordLearning({
+				type: type as "pattern" | "pitfall" | "efficiency" | "discovery" | "workflow",
+				trigger,
+				action,
+				source: source || "daemon",
+			});
+
+			this.logger.info("Learning added via Intelligence", { requestId, workspace, learningId, type });
+		} catch (err) {
+			this.logger.warn("Failed to add learning via Intelligence, falling back to local storage", {
+				requestId,
+				error: String(err),
+			});
+
+			// Fallback: Write directly to JSONL file
+			try {
+				const learningsDir = join(workspace, ".snapback", "learnings");
+				if (!existsSync(learningsDir)) {
+					mkdirSync(learningsDir, { recursive: true });
+				}
+				const learningsPath = join(learningsDir, "learnings.jsonl");
+				const entry = {
+					type,
+					trigger,
+					action,
+					source: source || "daemon",
+					timestamp: new Date().toISOString(),
+				};
+				await writeFile(learningsPath, JSON.stringify(entry) + "\n", { flag: "a" });
+			} catch (writeErr) {
+				this.logger.error("Failed to write learning", { requestId, error: String(writeErr) });
+			}
+		}
 
 		return {
 			learningId,
@@ -1148,10 +1370,15 @@ export class SnapBackDaemon extends EventEmitter {
 		};
 	}
 
-	private async handleLearningSearch(params: Record<string, unknown>, _requestId: string): Promise<unknown> {
-		const { workspace, keywords: keywordsParam } = params as {
+	private async handleLearningSearch(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const {
+			workspace,
+			keywords: keywordsParam,
+			limit,
+		} = params as {
 			workspace: string;
 			keywords: string[];
+			limit?: number;
 		};
 
 		if (!workspace || typeof workspace !== "string") {
@@ -1161,17 +1388,50 @@ export class SnapBackDaemon extends EventEmitter {
 			throw new InvalidParamsError("keywords is required and must be an array");
 		}
 
-		return {
-			learnings: [],
-			count: 0,
-		};
+		try {
+			const intel = getIntelligence(workspace);
+			const learningsResult = intel.queryLearnings(keywordsParam);
+
+			// Apply limit if provided
+			const limitedLearnings = limit ? learningsResult.slice(0, limit) : learningsResult.slice(0, 10);
+
+			const learnings = limitedLearnings.map((l, index) => ({
+				type: l.type,
+				trigger: Array.isArray(l.trigger) ? l.trigger.join(", ") : l.trigger,
+				action: l.action,
+				source: l.source,
+				// Score based on position (earlier = more relevant)
+				score: (limitedLearnings.length - index) / Math.max(limitedLearnings.length, 1),
+			}));
+
+			this.logger.debug("Learning search completed", {
+				requestId,
+				workspace,
+				keywordCount: keywordsParam.length,
+				resultsCount: learnings.length,
+			});
+
+			return {
+				learnings,
+				count: learnings.length,
+			};
+		} catch (err) {
+			this.logger.warn("Failed to search learnings via Intelligence", { requestId, error: String(err) });
+
+			// Return empty results on error
+			return {
+				learnings: [],
+				count: 0,
+			};
+		}
 	}
 
-	private async handleContextGet(params: Record<string, unknown>, _requestId: string): Promise<unknown> {
-		const { workspace, task, files } = params as {
+	private async handleContextGet(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, task, files, keywords } = params as {
 			workspace: string;
 			task: string;
 			files?: string[];
+			keywords?: string[];
 		};
 
 		if (!workspace || typeof workspace !== "string") {
@@ -1186,15 +1446,100 @@ export class SnapBackDaemon extends EventEmitter {
 			validatePaths(workspace, files);
 		}
 
+		// Get Intelligence instance
+		const intel = getIntelligence(workspace);
+
+		// Extract effective keywords
+		const effectiveKeywords =
+			keywords && keywords.length > 0
+				? keywords
+				: task
+						.toLowerCase()
+						.split(/\s+/)
+						.filter((w) => w.length > 3);
+
+		// Get context from Intelligence
+		let patterns: Array<{ name: string; description: string }> = [];
+		const constraints: Array<{ domain: string; name: string; value: string | number; description: string }> = [];
+		let learnings: Array<{ type: string; trigger: string; action: string; relevanceScore: number }> = [];
+
+		try {
+			const contextResult = await intel.getContext({
+				task,
+				keywords: effectiveKeywords,
+			});
+
+			// Extract patterns
+			if (contextResult.patterns) {
+				const patternLines = contextResult.patterns.split("\n").filter(Boolean);
+				patterns = patternLines.slice(0, 5).map((line) => ({
+					name: line.substring(0, 50),
+					description: line,
+				}));
+			}
+
+			// Get learnings
+			const learningsResult = intel.queryLearnings(effectiveKeywords);
+			learnings = learningsResult.slice(0, 5).map((l, index) => ({
+				type: l.type,
+				trigger: Array.isArray(l.trigger) ? l.trigger.join(", ") : l.trigger,
+				action: l.action,
+				// Score based on position (earlier = more relevant)
+				relevanceScore: (learningsResult.length - index) / Math.max(learningsResult.length, 1),
+			}));
+		} catch (err) {
+			this.logger.warn("Failed to get Intelligence context", { requestId, error: String(err) });
+		}
+
+		// Get constraints from context file
+		try {
+			const ctxPath = join(workspace, ".snapback", "ctx", "context.json");
+			if (existsSync(ctxPath)) {
+				const ctxContent = JSON.parse(await readFile(ctxPath, "utf8"));
+				if (ctxContent.constraints) {
+					for (const [domain, domainConstraints] of Object.entries(ctxContent.constraints)) {
+						for (const [name, constraint] of Object.entries(domainConstraints as Record<string, any>)) {
+							constraints.push({
+								domain,
+								name,
+								value: constraint.max || constraint.value,
+								description: constraint.description || "",
+							});
+						}
+					}
+				}
+			}
+		} catch {
+			// No constraints file
+		}
+
+		// Build risk assessment
+		const riskAreas: string[] = [];
+		const recommendations: string[] = [];
+
+		if (files && files.length > 0) {
+			for (const file of files) {
+				const lowerPath = file.toLowerCase();
+				if (lowerPath.includes("auth") && !riskAreas.includes("auth")) riskAreas.push("auth");
+				if (lowerPath.includes("payment") && !riskAreas.includes("payment")) riskAreas.push("payment");
+				if (lowerPath.includes("security") && !riskAreas.includes("security")) riskAreas.push("security");
+				if (lowerPath.includes("config") && !riskAreas.includes("config")) riskAreas.push("config");
+			}
+		}
+
+		const criticalAreas = ["auth", "payment", "security"];
+		const hasCritical = riskAreas.some((a) => criticalAreas.includes(a));
+		const overallRisk = hasCritical ? "high" : riskAreas.length > 0 ? "medium" : "low";
+
 		return {
-			patterns: [],
-			constraints: [],
-			learnings: [],
+			patterns,
+			constraints,
+			learnings,
 			observations: [],
 			riskAssessment: {
-				overallRisk: "low",
-				riskAreas: [],
-				recommendations: [],
+				overallRisk,
+				riskAreas,
+				recommendations,
 			},
 		};
 	}
@@ -1256,6 +1601,151 @@ export class SnapBackDaemon extends EventEmitter {
 				this.resetIdleTimer();
 			}
 		}, this.config.idleTimeoutMs || DEFAULT_IDLE_TIMEOUT_MS);
+	}
+
+	// =========================================================================
+	// FILE WATCHER METHODS
+	// =========================================================================
+
+	/**
+	 * Initialize file watcher event handlers
+	 */
+	private initFileWatcherEvents(): void {
+		const fileWatcher = getFileWatcherService();
+
+		// Wire up file change events to broadcast to subscribers
+		fileWatcher.on("file_changed", (event: FileChangeEvent) => {
+			this.logger.debug("File change detected", {
+				workspace: event.workspace,
+				file: event.file,
+				type: event.type,
+				riskLevel: event.riskLevel,
+			});
+
+			// Broadcast to all subscribers of this workspace
+			this.broadcastToWorkspace(event.workspace, {
+				type: "risk.detected",
+				timestamp: event.timestamp,
+				workspace: event.workspace,
+				data: {
+					file: event.file,
+					changeType: event.type,
+					riskLevel: event.riskLevel,
+					reason: event.riskReason || "File modified",
+					suggestion:
+						event.riskLevel === "high"
+							? "Consider creating a snapshot before making more changes"
+							: event.riskLevel === "medium"
+								? "Monitor changes closely"
+								: undefined,
+				},
+			});
+
+			// Update workspace activity
+			const workspaceCtx = this.workspaces.get(event.workspace);
+			if (workspaceCtx) {
+				workspaceCtx.lastActivity = event.timestamp;
+			}
+		});
+
+		fileWatcher.on("error", (event: { workspace: string; error: string }) => {
+			this.logger.warn("File watcher error", event);
+		});
+	}
+
+	/**
+	 * Handle watch.subscribe
+	 */
+	private async handleWatchSubscribe(
+		params: Record<string, unknown>,
+		requestId: string,
+	): Promise<{ subscribed: boolean; patterns: string[] }> {
+		const { workspace, patterns } = params as {
+			workspace: string;
+			patterns?: string[];
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		// Validate workspace path
+		validatePath(workspace, workspace);
+
+		const fileWatcher = getFileWatcherService();
+
+		// Use requestId as subscriber ID for this connection
+		const result = await fileWatcher.subscribe(workspace, requestId, {
+			patterns,
+		});
+
+		// Track workspace subscription for this connection
+		// Find the connection that made this request and update its context
+		for (const [_socket, ctx] of this.connections) {
+			// If this is the requesting connection, update its workspace
+			if (!ctx.workspace || ctx.workspace === workspace) {
+				ctx.workspace = workspace;
+				break;
+			}
+		}
+
+		// Ensure workspace context exists
+		if (!this.workspaces.has(workspace)) {
+			this.workspaces.set(workspace, {
+				id: this.hashWorkspace(workspace),
+				root: workspace,
+				initialized: true,
+				sessionActive: false,
+				snapshotCount: 0,
+				lastActivity: Date.now(),
+				subscribers: new Set([requestId]),
+			});
+		} else {
+			const ctx = this.workspaces.get(workspace)!;
+			ctx.subscribers.add(requestId);
+		}
+
+		this.logger.debug("Watch subscription added", {
+			requestId,
+			workspace,
+			patterns: result.patterns,
+		});
+
+		return result;
+	}
+
+	/**
+	 * Handle watch.unsubscribe
+	 */
+	private async handleWatchUnsubscribe(
+		params: Record<string, unknown>,
+		requestId: string,
+	): Promise<{ unsubscribed: boolean }> {
+		const { workspace } = params as {
+			workspace: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		const fileWatcher = getFileWatcherService();
+
+		const result = await fileWatcher.unsubscribe(workspace, requestId);
+
+		// Update workspace subscribers
+		const ctx = this.workspaces.get(workspace);
+		if (ctx) {
+			ctx.subscribers.delete(requestId);
+		}
+
+		this.logger.debug("Watch subscription removed", {
+			requestId,
+			workspace,
+			unsubscribed: result.unsubscribed,
+		});
+
+		return result;
 	}
 
 	/**

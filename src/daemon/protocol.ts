@@ -514,6 +514,8 @@ export interface WorkspaceContext {
 	initialized: boolean;
 	sessionActive: boolean;
 	currentTaskId?: string;
+	/** Timestamp when session was started (for duration calculation) */
+	sessionStartedAt?: number;
 	snapshotCount: number;
 	lastActivity: number;
 	subscribers: Set<string>;
