@@ -759,6 +759,13 @@ export class SnapBackDaemon extends EventEmitter {
 			case "watch.unsubscribe":
 				return this.handleWatchUnsubscribe(params, requestId);
 
+			// MCP coordination methods
+			case "snapshot.created":
+				return this.handleSnapshotCreatedNotification(params, requestId);
+
+			case "file.modified":
+				return this.handleFileModifiedNotification(params, requestId);
+
 			default:
 				throw new MethodNotFoundError(method);
 		}
@@ -1577,6 +1584,139 @@ export class SnapBackDaemon extends EventEmitter {
 			tests: { discovered: 0 },
 			lint: { passed: true, errors: 0, warnings: 0 },
 		};
+	}
+
+	// =========================================================================
+	// MCP COORDINATION METHODS
+	// =========================================================================
+
+	/**
+	 * Handle snapshot.created notification from MCP
+	 *
+	 * This is CRITICAL for cross-surface coordination:
+	 * When MCP tools create snapshots, the Extension's vitals system needs to know
+	 * so it can reset pressure and update the UI. Without this handler, MCP-created
+	 * snapshots don't reset the vitals pressure gauge.
+	 *
+	 * Flow: MCP → Daemon (this handler) → Broadcast to Extension subscribers
+	 */
+	private async handleSnapshotCreatedNotification(
+		params: Record<string, unknown>,
+		requestId: string,
+	): Promise<{ acknowledged: boolean }> {
+		const { workspace, id, filePath, trigger, source } = params as {
+			workspace: string;
+			id: string;
+			filePath?: string;
+			trigger?: string;
+			source?: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!id || typeof id !== "string") {
+			throw new InvalidParamsError("id (snapshot ID) is required");
+		}
+
+		this.logger.info("Snapshot created notification from MCP", {
+			requestId,
+			workspace,
+			snapshotId: id,
+			filePath,
+			trigger,
+			source,
+		});
+
+		// Update workspace snapshot count
+		const ctx = this.workspaces.get(workspace);
+		if (ctx) {
+			ctx.snapshotCount++;
+			ctx.lastActivity = Date.now();
+		}
+
+		// Broadcast snapshot.created event to all subscribers of this workspace
+		// This is what triggers the Extension's AutoDecisionIntegration to call vitals.onSnapshot()
+		this.broadcastToWorkspace(workspace, {
+			type: "snapshot.created",
+			timestamp: Date.now(),
+			workspace,
+			data: {
+				snapshotId: id,
+				filePath: filePath || "unknown",
+				trigger: trigger || "mcp",
+				source: source || "mcp",
+			},
+		});
+
+		return { acknowledged: true };
+	}
+
+	/**
+	 * Handle file.modified notification from MCP
+	 *
+	 * Records file modifications for AI attribution tracking.
+	 * Enables cross-surface coordination of file change detection.
+	 */
+	private async handleFileModifiedNotification(
+		params: Record<string, unknown>,
+		requestId: string,
+	): Promise<{ acknowledged: boolean }> {
+		const { workspace, path: filePath, linesChanged, aiAttributed } = params as {
+			workspace: string;
+			path: string;
+			linesChanged: number;
+			aiAttributed: boolean;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!filePath || typeof filePath !== "string") {
+			throw new InvalidParamsError("path is required");
+		}
+
+		// Validate the file path
+		validatePath(workspace, filePath);
+
+		this.logger.debug("File modified notification from MCP", {
+			requestId,
+			workspace,
+			filePath,
+			linesChanged,
+			aiAttributed,
+		});
+
+		// Record the modification in Intelligence for session tracking
+		const ctx = this.workspaces.get(workspace);
+		if (ctx?.currentTaskId) {
+			try {
+				const intel = getIntelligence(workspace);
+				intel.recordFileModification(ctx.currentTaskId, {
+					path: filePath,
+					timestamp: Date.now(),
+					type: "update",
+					linesChanged: linesChanged || 0,
+				});
+			} catch (err) {
+				this.logger.warn("Failed to record file modification", { requestId, error: String(err) });
+			}
+		}
+
+		// Broadcast file change event for risk detection
+		this.broadcastToWorkspace(workspace, {
+			type: "risk.detected",
+			timestamp: Date.now(),
+			workspace,
+			data: {
+				file: filePath,
+				changeType: "modified",
+				riskLevel: aiAttributed ? "medium" : "low",
+				reason: aiAttributed ? "AI-attributed file modification" : "File modified",
+			},
+		});
+
+		return { acknowledged: true };
 	}
 
 	// =========================================================================

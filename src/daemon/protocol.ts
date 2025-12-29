@@ -115,7 +115,11 @@ export type DaemonMethod =
 	// File watching (proactive)
 	| "watch.subscribe"
 	| "watch.unsubscribe"
-	| "watch.file_changed";
+	| "watch.file_changed"
+
+	// MCP coordination (cross-surface events)
+	| "snapshot.created" // Notification from MCP that it created a snapshot
+	| "file.modified"; // Notification from MCP that it modified a file
 
 // =============================================================================
 // METHOD PARAMETERS
@@ -263,6 +267,33 @@ export interface FileChangedParams {
 	workspace: string;
 	file: string;
 	timestamp: number;
+}
+
+// =============================================================================
+// MCP COORDINATION PARAMETERS (Cross-surface events)
+// =============================================================================
+
+export interface SnapshotCreatedParams {
+	workspace: string;
+	id: string;
+	filePath?: string;
+	trigger?: "manual" | "auto" | "ai-detection";
+	source?: "mcp" | "cli" | "extension";
+}
+
+export interface SnapshotCreatedResult {
+	acknowledged: boolean;
+}
+
+export interface FileModifiedParams {
+	workspace: string;
+	path: string;
+	linesChanged?: number;
+	aiAttributed?: boolean;
+}
+
+export interface FileModifiedResult {
+	acknowledged: boolean;
 }
 
 // =============================================================================
