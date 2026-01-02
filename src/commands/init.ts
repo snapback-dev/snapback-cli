@@ -16,10 +16,10 @@
 
 import { access, constants, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { seedLearnings } from "@snapback/mcp/services";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
-
 import {
 	createSnapbackDirectory,
 	getCredentials,
@@ -94,6 +94,19 @@ export function createInitCommand(): Command {
 				// Save vitals
 				await saveWorkspaceVitals(vitals, cwd);
 
+				// Seed tiered learnings
+				spinner.start("Seeding learning patterns...");
+				const seedResult = seedLearnings(cwd);
+				if (seedResult.success && seedResult.filesCreated.length > 0) {
+					spinner.succeed(
+						`Seeded ${seedResult.learningsSeeded} patterns across ${seedResult.filesCreated.length} files`,
+					);
+				} else if (seedResult.filesCreated.length === 0) {
+					spinner.info("Learning patterns already seeded");
+				} else {
+					spinner.warn(`Seeding completed with ${seedResult.errors.length} error(s)`);
+				}
+
 				// Create workspace config
 				let config: WorkspaceConfig = {
 					createdAt: new Date().toISOString(),
@@ -116,7 +129,7 @@ export function createInitCommand(): Command {
 						};
 
 						spinner.succeed("Workspace registered");
-					} catch (error) {
+					} catch (_error) {
 						spinner.warn("Could not register workspace (offline mode)");
 						config.syncEnabled = false;
 					}
@@ -217,10 +230,18 @@ async function detectPackageManager(
 ): Promise<"npm" | "pnpm" | "yarn" | "bun"> {
 	// Check packageManager field in package.json
 	if (packageJson.packageManager) {
-		if (packageJson.packageManager.startsWith("pnpm")) return "pnpm";
-		if (packageJson.packageManager.startsWith("yarn")) return "yarn";
-		if (packageJson.packageManager.startsWith("bun")) return "bun";
-		if (packageJson.packageManager.startsWith("npm")) return "npm";
+		if (packageJson.packageManager.startsWith("pnpm")) {
+			return "pnpm";
+		}
+		if (packageJson.packageManager.startsWith("yarn")) {
+			return "yarn";
+		}
+		if (packageJson.packageManager.startsWith("bun")) {
+			return "bun";
+		}
+		if (packageJson.packageManager.startsWith("npm")) {
+			return "npm";
+		}
 	}
 
 	// Check for lockfiles
@@ -322,7 +343,7 @@ async function detectTypeScript(
  * Detect critical files that should be protected
  */
 async function detectCriticalFiles(workspaceRoot: string): Promise<string[]> {
-	const criticalPatterns = [
+	const _criticalPatterns = [
 		// Configuration files
 		".env",
 		".env.local",
