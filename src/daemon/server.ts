@@ -1662,7 +1662,12 @@ export class SnapBackDaemon extends EventEmitter {
 		params: Record<string, unknown>,
 		requestId: string,
 	): Promise<{ acknowledged: boolean }> {
-		const { workspace, path: filePath, linesChanged, aiAttributed } = params as {
+		const {
+			workspace,
+			path: filePath,
+			linesChanged,
+			aiAttributed,
+		} = params as {
 			workspace: string;
 			path: string;
 			linesChanged: number;
