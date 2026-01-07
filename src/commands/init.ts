@@ -5,11 +5,15 @@
  * Creates .snapback/ directory and scans for workspace vitals.
  *
  * Flow:
- * 1. Check if already initialized
+ * 1. Check if already initialized (by extension OR CLI)
  * 2. Scan workspace for framework, package manager, etc.
  * 3. Create .snapback/ directory structure
  * 4. Detect critical files for protection suggestions
  * 5. If logged in, register workspace with server
+ *
+ * Philosophy: Extension is the PRIMARY onboarding path for 95% of users.
+ * CLI is for automation/scripting (CI/CD, dotfiles).
+ * CLI should DETECT and RESPECT extension state.
  *
  * @see implementation_plan.md Section 1.1
  */
@@ -67,10 +71,25 @@ export function createInitCommand(): Command {
 			const cwd = process.cwd();
 
 			try {
-				// Check if already initialized
+				// Check if already initialized (by extension OR CLI)
 				const initialized = await isSnapbackInitialized(cwd);
 				if (initialized && !options.force) {
 					const config = await getWorkspaceConfig(cwd);
+
+					// Detect if initialized by VS Code extension
+					const initSource = await detectInitializationSource(cwd);
+
+					if (initSource === "extension") {
+						// 🎯 PHILOSOPHY: Extension is the PRIMARY onboarding path
+						// CLI should respect and acknowledge extension state
+						console.log(chalk.green("✓ SnapBack already initialized by VS Code extension"));
+						console.log(chalk.gray(`Workspace ID: ${config?.workspaceId || "local"}`));
+						console.log();
+						console.log(chalk.cyan("The extension has already set up SnapBack for this workspace."));
+						console.log(chalk.cyan("You're good to go! 🚀"));
+						return;
+					}
+
 					console.log(chalk.yellow("SnapBack already initialized in this workspace"));
 					console.log(chalk.gray(`Workspace ID: ${config?.workspaceId || "local"}`));
 					console.log(chalk.gray("Use --force to reinitialize"));
@@ -438,6 +457,60 @@ async function registerWorkspace(vitals: WorkspaceVitals): Promise<string> {
 
 	const data = (await response.json()) as { id: string };
 	return data.id;
+}
+
+// =============================================================================
+// INITIALIZATION SOURCE DETECTION
+// =============================================================================
+
+/**
+ * Detect if .snapback/ was initialized by VS Code extension or CLI
+ *
+ * Philosophy: Extension is the PRIMARY onboarding path.
+ * CLI should detect and respect extension state.
+ *
+ * Detection heuristics:
+ * - Extension creates specific markers in config.json
+ * - Extension-initialized workspaces have different file patterns
+ */
+async function detectInitializationSource(workspaceRoot: string): Promise<"extension" | "cli" | "unknown"> {
+	try {
+		const configPath = join(workspaceRoot, ".snapback", "config.json");
+		const content = await readFile(configPath, "utf-8");
+		const config = JSON.parse(content) as Record<string, unknown>;
+
+		// Extension sets specific markers
+		if (config.initSource === "vscode-extension" || config.source === "extension") {
+			return "extension";
+		}
+
+		// CLI sets its own marker
+		if (config.initSource === "cli" || config.source === "cli") {
+			return "cli";
+		}
+
+		// Check for extension-specific files
+		try {
+			// Extension creates activation state in globalState, but we can check for patterns
+			const vitalsPath = join(workspaceRoot, ".snapback", "vitals.json");
+			const vitalsContent = await readFile(vitalsPath, "utf-8");
+			const vitals = JSON.parse(vitalsContent) as Record<string, unknown>;
+
+			// If vitals has detectedAt with specific extension-style timestamp format
+			if (vitals.detectedAt && typeof vitals.detectedAt === "string") {
+				// Both could have this, so check for extension-specific markers
+				if (vitals.source === "extension" || vitals.extensionVersion) {
+					return "extension";
+				}
+			}
+		} catch {
+			// vitals.json doesn't exist or is invalid
+		}
+
+		return "unknown";
+	} catch {
+		return "unknown";
+	}
 }
 
 // =============================================================================
