@@ -11,7 +11,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { confirm, password } from "@inquirer/prompts";
-import { type AIClientConfig, detectAIClients, getSnapbackMCPConfig, writeClientConfig } from "@snapback/mcp-config";
+import {
+	type AIClientConfig,
+	detectAIClients,
+	getSnapbackMCPConfig,
+	repairClientConfig,
+	type ValidationResult,
+	validateClientConfig,
+	writeClientConfig,
+} from "@snapback/mcp-config";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
@@ -41,6 +49,7 @@ export function createToolsCommand(): Command {
 		.option("--gemini", "Configure for Gemini/Antigravity only")
 		.option("--aider", "Configure for Aider only")
 		.option("--roo-code", "Configure for Roo Code only")
+		.option("--qoder", "Configure for Qoder only")
 		.option("--list", "List available tools")
 		.option("--dry-run", "Show what would be configured without writing")
 		.option("--force", "Reconfigure even if already set up")
@@ -89,6 +98,9 @@ export function createToolsCommand(): Command {
 				if (options["roo-code"] || options.rooCode) {
 					toolsToConfig.push("roo-code");
 				}
+				if (options.qoder) {
+					toolsToConfig.push("qoder");
+				}
 
 				// If no specific tool, auto-detect
 				if (toolsToConfig.length === 0) {
@@ -122,8 +134,27 @@ export function createToolsCommand(): Command {
 	tools
 		.command("status")
 		.description("Check MCP configuration status")
-		.action(async () => {
-			await checkToolsStatus();
+		.option("--verbose", "Show detailed validation information")
+		.action(async (options) => {
+			await checkToolsStatus(options.verbose);
+		});
+
+	tools
+		.command("validate")
+		.description("Validate MCP configurations for all detected AI tools")
+		.option("--verbose", "Show detailed validation issues")
+		.action(async (options) => {
+			await validateTools(options.verbose);
+		});
+
+	tools
+		.command("repair")
+		.description("Repair broken MCP configurations")
+		.option("-y, --yes", "Skip confirmation prompts")
+		.option("--workspace <path>", "Override workspace root path")
+		.option("--api-key <key>", "API key for Pro features")
+		.action(async (options) => {
+			await repairTools(options.yes, options.workspace, options.apiKey);
 		});
 
 	return tools;
@@ -286,6 +317,22 @@ async function configureClient(
 			spinner.text = `Configuring ${client.displayName} (dev mode)...`;
 		}
 
+		// Pre-flight validation: Check existing config for issues
+		if (client.hasSnapback) {
+			spinner.text = `Validating existing config for ${client.displayName}...`;
+			const validation = validateClientConfig(client);
+
+			if (!validation.valid) {
+				const errors = validation.issues.filter((i) => i.severity === "error");
+				if (errors.length > 0) {
+					spinner.warn("Existing config has issues, will be replaced");
+					for (const issue of errors) {
+						console.log(chalk.yellow(`  ⚠ ${issue.message}`));
+					}
+				}
+			}
+		}
+
 		// Build MCP config
 		const mcpConfig = getSnapbackMCPConfig({
 			apiKey,
@@ -310,7 +357,21 @@ async function configureClient(
 		const result = writeClientConfig(client, mcpConfig);
 
 		if (result.success) {
-			spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
+			// Post-write validation to ensure config was written correctly
+			const postValidation = validateClientConfig({ ...client, hasSnapback: true });
+			if (postValidation.valid) {
+				spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
+			} else {
+				const warnings = postValidation.issues.filter((i) => i.severity === "warning");
+				if (warnings.length > 0) {
+					spinner.succeed(`Configured ${client.displayName} (with warnings)`);
+					for (const warning of warnings) {
+						console.log(chalk.yellow(`  ⚠ ${warning.message}`));
+					}
+				} else {
+					spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
+				}
+			}
 			console.log(chalk.gray(`  Config: ${client.configPath}`));
 			if (devMode) {
 				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
@@ -415,11 +476,13 @@ async function resolveApiKey(providedApiKey?: string, skipPrompts = false): Prom
 /**
  * Check status of all tool configurations
  */
-async function checkToolsStatus(): Promise<void> {
+async function checkToolsStatus(verbose = false): Promise<void> {
 	const detection = detectAIClients();
 
 	console.log(chalk.cyan("\nMCP Configuration Status:"));
 	console.log();
+
+	let hasIssues = false;
 
 	for (const client of detection.clients) {
 		let icon: string;
@@ -429,8 +492,44 @@ async function checkToolsStatus(): Promise<void> {
 			icon = chalk.gray("○");
 			status = chalk.gray("Not installed");
 		} else if (client.hasSnapback) {
-			icon = chalk.green("✓");
-			status = chalk.green("Configured");
+			// Deep validation for configured clients
+			const validation = validateClientConfig(client);
+			if (validation.valid) {
+				icon = chalk.green("✓");
+				status = chalk.green("Configured");
+			} else {
+				const errors = validation.issues.filter((i) => i.severity === "error");
+				const warnings = validation.issues.filter((i) => i.severity === "warning");
+				if (errors.length > 0) {
+					icon = chalk.red("✗");
+					status = chalk.red(`Invalid (${errors.length} error(s))`);
+					hasIssues = true;
+				} else if (warnings.length > 0) {
+					icon = chalk.yellow("⚠");
+					status = chalk.yellow(`Configured (${warnings.length} warning(s))`);
+				} else {
+					icon = chalk.green("✓");
+					status = chalk.green("Configured");
+				}
+			}
+
+			// Show validation details in verbose mode (reuse validation from above)
+			if (verbose && validation.issues.length > 0) {
+				console.log(`${icon} ${client.displayName.padEnd(20)} ${status}`);
+				for (const issue of validation.issues) {
+					const issueIcon =
+						issue.severity === "error"
+							? chalk.red("✗")
+							: issue.severity === "warning"
+								? chalk.yellow("⚠")
+								: chalk.blue("ℹ");
+					console.log(`    ${issueIcon} ${issue.message}`);
+					if (issue.fix) {
+						console.log(chalk.gray(`      Fix: ${issue.fix}`));
+					}
+				}
+				continue;
+			}
 		} else {
 			icon = chalk.yellow("○");
 			status = chalk.yellow("Detected but not configured");
@@ -441,13 +540,182 @@ async function checkToolsStatus(): Promise<void> {
 
 	console.log();
 
-	if (detection.needsSetup.length > 0) {
+	if (hasIssues) {
+		console.log(chalk.red("Some configurations have issues."));
+		console.log(chalk.gray("Run: snap tools repair"));
+	} else if (detection.needsSetup.length > 0) {
 		console.log(chalk.yellow(`${detection.needsSetup.length} tool(s) need configuration.`));
 		console.log(chalk.gray("Run: snap tools configure"));
 	} else if (detection.detected.length > 0) {
 		console.log(chalk.green("All detected AI tools are configured!"));
 	} else {
 		console.log(chalk.gray("Install Claude Desktop or Cursor to get started."));
+	}
+}
+
+/**
+ * Validate all detected AI tool configurations
+ */
+async function validateTools(verbose = false): Promise<void> {
+	const detection = detectAIClients();
+	const configured = detection.detected.filter((c) => c.hasSnapback);
+
+	if (configured.length === 0) {
+		console.log(chalk.yellow("\nNo AI tools with SnapBack configured."));
+		console.log(chalk.gray("Run: snap tools configure"));
+		return;
+	}
+
+	console.log(chalk.cyan("\nValidating MCP Configurations:"));
+	console.log();
+
+	let totalErrors = 0;
+	let totalWarnings = 0;
+
+	for (const client of configured) {
+		const validation = validateClientConfig(client);
+		const errors = validation.issues.filter((i) => i.severity === "error");
+		const warnings = validation.issues.filter((i) => i.severity === "warning");
+		const infos = validation.issues.filter((i) => i.severity === "info");
+
+		totalErrors += errors.length;
+		totalWarnings += warnings.length;
+
+		if (validation.valid && errors.length === 0 && warnings.length === 0) {
+			console.log(`${chalk.green("✓")} ${client.displayName}: ${chalk.green("Valid")}`);
+		} else if (errors.length > 0) {
+			console.log(`${chalk.red("✗")} ${client.displayName}: ${chalk.red("Invalid")}`);
+		} else {
+			console.log(`${chalk.yellow("⚠")} ${client.displayName}: ${chalk.yellow("Valid with warnings")}`);
+		}
+
+		if (verbose || errors.length > 0) {
+			for (const issue of [...errors, ...warnings, ...(verbose ? infos : [])]) {
+				const icon =
+					issue.severity === "error"
+						? chalk.red("  ✗")
+						: issue.severity === "warning"
+							? chalk.yellow("  ⚠")
+							: chalk.blue("  ℹ");
+				console.log(`${icon} ${issue.message}`);
+				if (issue.fix) {
+					console.log(chalk.gray(`    Fix: ${issue.fix}`));
+				}
+			}
+		}
+	}
+
+	console.log();
+
+	if (totalErrors > 0) {
+		console.log(chalk.red(`Found ${totalErrors} error(s) and ${totalWarnings} warning(s).`));
+		console.log(chalk.gray("Run: snap tools repair"));
+		process.exit(1);
+	} else if (totalWarnings > 0) {
+		console.log(chalk.yellow(`Found ${totalWarnings} warning(s). Configurations are functional.`));
+	} else {
+		console.log(chalk.green("All configurations are valid!"));
+	}
+}
+
+/**
+ * Repair broken MCP configurations
+ */
+async function repairTools(skipPrompts = false, workspaceOverride?: string, providedApiKey?: string): Promise<void> {
+	const detection = detectAIClients();
+	const configured = detection.detected.filter((c) => c.hasSnapback);
+
+	if (configured.length === 0) {
+		console.log(chalk.yellow("\nNo AI tools with SnapBack configured."));
+		console.log(chalk.gray("Run: snap tools configure"));
+		return;
+	}
+
+	// Find clients with issues
+	const clientsWithIssues: Array<{ client: AIClientConfig; validation: ValidationResult }> = [];
+
+	for (const client of configured) {
+		const validation = validateClientConfig(client);
+		if (!validation.valid || validation.issues.some((i) => i.severity === "error" || i.severity === "warning")) {
+			clientsWithIssues.push({ client, validation });
+		}
+	}
+
+	if (clientsWithIssues.length === 0) {
+		console.log(chalk.green("\nAll configurations are healthy! No repairs needed."));
+		return;
+	}
+
+	console.log(chalk.cyan("\nMCP Configuration Repair:"));
+	console.log();
+
+	// Show what needs repair
+	for (const { client, validation } of clientsWithIssues) {
+		const errors = validation.issues.filter((i) => i.severity === "error");
+		const warnings = validation.issues.filter((i) => i.severity === "warning");
+
+		console.log(`${chalk.yellow("⚠")} ${client.displayName}:`);
+		for (const issue of [...errors, ...warnings]) {
+			const icon = issue.severity === "error" ? chalk.red("  ✗") : chalk.yellow("  ⚠");
+			console.log(`${icon} ${issue.message}`);
+		}
+	}
+
+	console.log();
+
+	// Confirm repair
+	if (!skipPrompts) {
+		const proceed = await confirm({
+			message: `Repair ${clientsWithIssues.length} configuration(s)?`,
+			default: true,
+		});
+
+		if (!proceed) {
+			console.log("\nRepair cancelled.");
+			return;
+		}
+	}
+
+	// Get API key for repair
+	const apiKey = await resolveApiKey(providedApiKey, skipPrompts);
+
+	// Perform repairs
+	const spinner = ora("Repairing configurations...").start();
+
+	let repaired = 0;
+	let failed = 0;
+
+	for (const { client } of clientsWithIssues) {
+		spinner.text = `Repairing ${client.displayName}...`;
+
+		const result = repairClientConfig(client, {
+			apiKey,
+			workspaceRoot: workspaceOverride || findWorkspaceRoot(process.cwd()),
+			force: true,
+		});
+
+		if (result.success) {
+			repaired++;
+		} else {
+			failed++;
+			spinner.warn(`Failed to repair ${client.displayName}: ${result.error}`);
+		}
+	}
+
+	spinner.stop();
+
+	console.log();
+	if (repaired > 0) {
+		console.log(chalk.green(`✓ Repaired ${repaired} configuration(s).`));
+	}
+	if (failed > 0) {
+		console.log(chalk.red(`✗ Failed to repair ${failed} configuration(s).`));
+		console.log(chalk.gray("Try: snap tools configure --force"));
+	}
+
+	if (repaired > 0) {
+		console.log();
+		console.log(chalk.bold("Next: Restart your AI assistant to apply changes."));
 	}
 }
 
@@ -478,4 +746,4 @@ function showNextSteps(): void {
 // EXPORTS
 // =============================================================================
 
-export { listTools, autoConfigureTools, configureTool, checkToolsStatus };
+export { listTools, autoConfigureTools, configureTool, checkToolsStatus, validateTools, repairTools };

@@ -20,12 +20,13 @@ import { access, constants, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { detectAIClients } from "@snapback/mcp-config";
+import { detectAIClients, repairClientConfig, validateClientConfig } from "@snapback/mcp-config";
 import chalk from "chalk";
 import { Command } from "commander";
 import ora from "ora";
 
-const execAsync = promisify(exec);
+// Reserved for potential future use in async diagnostics
+const _execAsync = promisify(exec);
 
 import {
 	getCredentials,
@@ -65,6 +66,7 @@ interface DiagnosticReport {
 
 interface DoctorOptions {
 	fix?: boolean;
+	fixMcp?: boolean;
 	json?: boolean;
 	verbose?: boolean;
 }
@@ -80,6 +82,7 @@ export function createDoctorCommand(): Command {
 	return new Command("doctor")
 		.description("Diagnose SnapBack configuration and health")
 		.option("--fix", "Attempt to auto-fix detected issues")
+		.option("--fix-mcp", "Auto-repair broken MCP configurations")
 		.option("--json", "Output as JSON")
 		.option("--verbose", "Show detailed information")
 		.action(async (options: DoctorOptions) => {
@@ -101,6 +104,12 @@ export function createDoctorCommand(): Command {
 				if (options.fix && report.summary.errors + report.summary.warnings > 0) {
 					console.log();
 					await runAutoFixes(report.results);
+				}
+
+				// Auto-fix MCP configurations if requested
+				if (options.fixMcp) {
+					console.log();
+					await runMcpAutoFix();
 				}
 
 				// Exit with appropriate code
@@ -262,7 +271,7 @@ async function checkAuthentication(): Promise<DiagnosticResult> {
 			details: ["Some features require authentication"],
 			fix: "Run: snap login",
 		};
-	} catch (error) {
+	} catch {
 		return {
 			name: "Authentication",
 			status: "error",
@@ -279,7 +288,7 @@ async function checkWorkspace(): Promise<DiagnosticResult> {
 
 	try {
 		if (await isSnapbackInitialized(cwd)) {
-			const config = await getWorkspaceConfig(cwd);
+			await getWorkspaceConfig(cwd);
 			return {
 				name: "Workspace",
 				status: "ok",
@@ -294,7 +303,7 @@ async function checkWorkspace(): Promise<DiagnosticResult> {
 			message: "Not a SnapBack workspace",
 			fix: "Run: snap init",
 		};
-	} catch (error) {
+	} catch {
 		return {
 			name: "Workspace",
 			status: "error",
@@ -304,7 +313,7 @@ async function checkWorkspace(): Promise<DiagnosticResult> {
 }
 
 /**
- * Check MCP tool configurations
+ * Check MCP tool configurations with deep validation
  */
 async function checkMcpTools(): Promise<DiagnosticResult> {
 	try {
@@ -321,21 +330,68 @@ async function checkMcpTools(): Promise<DiagnosticResult> {
 		const configured = detection.detected.filter((c) => c.hasSnapback);
 		const needsSetup = detection.needsSetup;
 
-		if (needsSetup.length === 0) {
+		// Deep validation for configured clients
+		const validationIssues: string[] = [];
+		let hasErrors = false;
+		let hasWarnings = false;
+
+		for (const client of configured) {
+			const validation = validateClientConfig(client);
+			const errors = validation.issues.filter((i) => i.severity === "error");
+			const warnings = validation.issues.filter((i) => i.severity === "warning");
+
+			if (errors.length > 0) {
+				hasErrors = true;
+				for (const err of errors) {
+					validationIssues.push(`${client.displayName}: ${err.message}`);
+				}
+			}
+			if (warnings.length > 0) {
+				hasWarnings = true;
+				for (const warn of warnings) {
+					validationIssues.push(`${client.displayName}: ${warn.message}`);
+				}
+			}
+		}
+
+		// Return based on validation results
+		if (hasErrors) {
 			return {
 				name: "AI Tools",
-				status: "ok",
-				message: `${configured.length} AI tool(s) configured`,
+				status: "error",
+				message: `${configured.length} tool(s) configured, but some have errors`,
+				details: validationIssues,
+				fix: "Run: snap doctor --fix-mcp",
+			};
+		}
+
+		if (hasWarnings) {
+			return {
+				name: "AI Tools",
+				status: "warning",
+				message: `${configured.length} tool(s) configured with warnings`,
+				details: validationIssues,
+				fix: "Run: snap doctor --fix-mcp",
+			};
+		}
+
+		if (needsSetup.length > 0) {
+			return {
+				name: "AI Tools",
+				status: "warning",
+				message: `${needsSetup.length} AI tool(s) need configuration`,
+				details: needsSetup.map((c) => `${c.displayName} not configured`),
+				fix: "Run: snap tools configure",
 			};
 		}
 
 		return {
 			name: "AI Tools",
-			status: "warning",
-			message: `${needsSetup.length} AI tool(s) need configuration`,
-			fix: "Run: snap tools configure",
+			status: "ok",
+			message: `${configured.length} AI tool(s) configured and healthy`,
+			details: configured.map((c) => c.displayName),
 		};
-	} catch (error) {
+	} catch {
 		return {
 			name: "AI Tools",
 			status: "error",
@@ -396,7 +452,7 @@ async function checkNetworkConnectivity(): Promise<DiagnosticResult> {
 	try {
 		const response = await fetch(`${apiUrl}/health`).catch(() => null);
 
-		if (response && response.ok) {
+		if (response?.ok) {
 			return {
 				name: "Network",
 				status: "ok",
@@ -426,7 +482,7 @@ async function checkNetworkConnectivity(): Promise<DiagnosticResult> {
  * Display diagnostic report
  */
 function displayReport(report: DiagnosticReport, verbose?: boolean): void {
-	console.log("\n" + chalk.cyan.bold("SnapBack System Health Report"));
+	console.log(`\n${chalk.cyan.bold("SnapBack System Health Report")}`);
 	console.log(chalk.gray(`Generated: ${new Date(report.timestamp).toLocaleString()}\n`));
 
 	displayBox(
@@ -457,9 +513,9 @@ function displayReport(report: DiagnosticReport, verbose?: boolean): void {
 		}
 	}
 
-	console.log("\n" + chalk.gray("─".repeat(40)));
+	console.log(`\n${chalk.gray("─".repeat(40))}`);
 
-	const { ok, warnings, errors, total } = report.summary;
+	const { warnings, errors, total } = report.summary;
 	if (errors > 0) {
 		console.log(chalk.red.bold(`\n✗ Diagnostics failed: ${errors} error(s), ${warnings} warning(s)`));
 	} else if (warnings > 0) {
@@ -490,7 +546,7 @@ function getStatusIcon(status: DiagnosticResult["status"]): string {
 /**
  * Get status color function
  */
-function getStatusColor(status: DiagnosticResult["status"]): any {
+function getStatusColor(status: DiagnosticResult["status"]): (text: string) => string {
 	switch (status) {
 		case "ok":
 			return chalk.green;
@@ -529,6 +585,64 @@ async function runAutoFixes(results: DiagnosticResult[]): Promise<void> {
 
 	console.log();
 	console.log(chalk.gray("Follow the instructions above to fix detected issues."));
+}
+
+/**
+ * Auto-fix MCP configurations
+ */
+async function runMcpAutoFix(): Promise<void> {
+	const detection = detectAIClients();
+	const configured = detection.detected.filter((c) => c.hasSnapback);
+
+	if (configured.length === 0) {
+		console.log(chalk.yellow("No MCP configurations to repair."));
+		console.log(chalk.gray("Run: snap tools configure"));
+		return;
+	}
+
+	// Find clients with issues
+	const clientsWithIssues = configured.filter((client) => {
+		const validation = validateClientConfig(client);
+		return !validation.valid || validation.issues.some((i) => i.severity === "error" || i.severity === "warning");
+	});
+
+	if (clientsWithIssues.length === 0) {
+		console.log(chalk.green("All MCP configurations are healthy!"));
+		return;
+	}
+
+	console.log(chalk.cyan("Repairing MCP configurations..."));
+	console.log();
+
+	let repaired = 0;
+	let failed = 0;
+
+	for (const client of clientsWithIssues) {
+		const spinner = ora(`Repairing ${client.displayName}...`).start();
+
+		const result = repairClientConfig(client, {
+			workspaceRoot: process.cwd(),
+			force: true,
+		});
+
+		if (result.success) {
+			spinner.succeed(`Repaired ${client.displayName}`);
+			repaired++;
+		} else {
+			spinner.fail(`Failed to repair ${client.displayName}: ${result.error}`);
+			failed++;
+		}
+	}
+
+	console.log();
+	if (repaired > 0) {
+		console.log(chalk.green(`✓ Repaired ${repaired} configuration(s).`));
+		console.log(chalk.bold("Restart your AI assistant to apply changes."));
+	}
+	if (failed > 0) {
+		console.log(chalk.red(`✗ Failed to repair ${failed} configuration(s).`));
+		console.log(chalk.gray("Try: snap tools configure --force"));
+	}
 }
 
 export { runDiagnostics, type DiagnosticReport, type DiagnosticResult };
