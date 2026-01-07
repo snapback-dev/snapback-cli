@@ -62,6 +62,8 @@ export function createMcpCommand() {
 				const serverOptions: McpServerOptions = {
 					workspaceRoot: workspaceValidation.root,
 					tier,
+					// CLI invocation is always local with write permissions
+					storageMode: "local",
 				};
 
 				// Launch MCP server with stdio transport
