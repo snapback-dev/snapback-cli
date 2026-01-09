@@ -29,6 +29,16 @@ const GLOBAL_SNAPBACK_DIR = ".snapback";
 export interface WorkspaceConfig {
 	workspaceId?: string;
 	tier?: "free" | "pro";
+	/**
+	 * CLI protection preset - user-friendly abstraction layer.
+	 *
+	 * Maps to canonical ProtectionLevel values (@snapback/contracts):
+	 * - "standard" → "watch" (auto-snapshot, warn on risky changes)
+	 * - "strict" → "block" (confirmation required, block high-risk)
+	 *
+	 * The CLI uses presets for better UX, while internal operations
+	 * use the canonical "watch" | "warn" | "block" values.
+	 */
 	protectionLevel?: "standard" | "strict";
 	syncEnabled?: boolean;
 	createdAt: string;
