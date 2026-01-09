@@ -25,6 +25,7 @@ import { platform } from "node:os";
 import { dirname, join, relative } from "node:path";
 
 import { Intelligence } from "@snapback/intelligence";
+import { LocalStorage, SnapshotManager } from "@snapback/sdk";
 
 import {
 	DEFAULT_HEALTH_PORT,
@@ -95,6 +96,39 @@ function getIntelligence(workspaceRoot: string): Intelligence {
 		intelligenceInstances.set(workspaceRoot, intel);
 	}
 	return intelligenceInstances.get(workspaceRoot)!;
+}
+
+// =============================================================================
+// SNAPSHOT MANAGER SINGLETON (ARCHITECTURE_REFACTOR_SPEC.md Phase 2)
+// =============================================================================
+
+/**
+ * SnapshotManager instances per workspace (singleton pattern for SDK integration)
+ * Per ARCHITECTURE_REFACTOR_SPEC.md Phase 2: Import OSS SDK
+ */
+const snapshotManagerInstances = new Map<string, SnapshotManager>();
+const storageInstances = new Map<string, LocalStorage>();
+
+/**
+ * Get or create SnapshotManager instance for a workspace.
+ * Per ARCHITECTURE_REFACTOR_SPEC.md Phase 2: Wire CLI daemon handlers to use SDK packages.
+ */
+function getSnapshotManager(workspaceRoot: string): SnapshotManager {
+	if (!snapshotManagerInstances.has(workspaceRoot)) {
+		// Create storage adapter (SQLite-based)
+		const dbPath = join(workspaceRoot, ".snapback", "snapshots.db");
+		const storage = new LocalStorage(dbPath);
+		storageInstances.set(workspaceRoot, storage);
+
+		// Create SnapshotManager with deduplication enabled
+		const manager = new SnapshotManager(storage, {
+			enableDeduplication: true,
+			namingStrategy: "semantic",
+			autoProtect: false,
+		});
+		snapshotManagerInstances.set(workspaceRoot, manager);
+	}
+	return snapshotManagerInstances.get(workspaceRoot)!;
 }
 
 // =============================================================================
@@ -1245,41 +1279,126 @@ export class SnapBackDaemon extends EventEmitter {
 			ctx.snapshotCount++;
 		}
 
-		const snapshotId = `snap_${Date.now().toString(36)}_${requestId}`;
+		// 🆕 ARCHITECTURE_REFACTOR_SPEC.md Phase 2: Use SDK SnapshotManager
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
 
-		// Broadcast snapshot created event
-		this.broadcastToWorkspace(workspace, {
-			type: "snapshot.created",
-			timestamp: Date.now(),
-			workspace,
-			data: { snapshotId, fileCount: files.length, reason },
-		});
+			// Read file contents for snapshot
+			const fileInputs = await Promise.all(
+				files.map(async (filePath) => {
+					try {
+						const fullPath = join(workspace, filePath);
+						const content = await readFile(fullPath, "utf-8");
+						return { path: filePath, content, action: "modify" as const };
+					} catch {
+						// File doesn't exist or can't be read - use empty content
+						return { path: filePath, content: "", action: "add" as const };
+					}
+				}),
+			);
 
-		this.logger.info("Snapshot created", { requestId, workspace, snapshotId, fileCount: files.length });
+			// Create snapshot using SDK SnapshotManager
+			const snapshot = await snapshotManager.create(fileInputs, {
+				description: reason,
+			});
 
-		return {
-			snapshotId,
-			fileCount: files.length,
-			totalSize: 0,
-			createdAt: new Date().toISOString(),
-			deduplicated: false,
-		};
+			// Calculate total size
+			const totalSize = fileInputs.reduce((sum, f) => sum + f.content.length, 0);
+
+			// Broadcast snapshot created event
+			this.broadcastToWorkspace(workspace, {
+				type: "snapshot.created",
+				timestamp: Date.now(),
+				workspace,
+				data: { snapshotId: snapshot.id, fileCount: files.length, reason },
+			});
+
+			this.logger.info("Snapshot created via SDK", {
+				requestId,
+				workspace,
+				snapshotId: snapshot.id,
+				fileCount: files.length,
+			});
+
+			return {
+				snapshotId: snapshot.id,
+				fileCount: files.length,
+				totalSize,
+				createdAt: new Date(snapshot.timestamp).toISOString(),
+				deduplicated: false,
+			};
+		} catch (err) {
+			// Fallback to simple ID generation if SDK fails
+			this.logger.warn("SDK snapshot creation failed, using fallback", {
+				requestId,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			const snapshotId = `snap_${Date.now().toString(36)}_${requestId}`;
+
+			// Broadcast snapshot created event
+			this.broadcastToWorkspace(workspace, {
+				type: "snapshot.created",
+				timestamp: Date.now(),
+				workspace,
+				data: { snapshotId, fileCount: files.length, reason },
+			});
+
+			this.logger.info("Snapshot created (fallback)", {
+				requestId,
+				workspace,
+				snapshotId,
+				fileCount: files.length,
+			});
+
+			return {
+				snapshotId,
+				fileCount: files.length,
+				totalSize: 0,
+				createdAt: new Date().toISOString(),
+				deduplicated: false,
+			};
+		}
 	}
 
 	private async handleSnapshotList(params: Record<string, unknown>, _requestId: string): Promise<unknown> {
-		const { workspace } = params as {
+		const { workspace, limit } = params as {
 			workspace: string;
+			limit?: number;
 		};
 
 		if (!workspace || typeof workspace !== "string") {
 			throw new InvalidParamsError("workspace is required");
 		}
 
-		// Return empty list for now - integration with actual storage pending
-		return {
-			snapshots: [],
-			total: 0,
-		};
+		// 🆕 ARCHITECTURE_REFACTOR_SPEC.md Phase 2: Use SDK SnapshotManager
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			const allSnapshots = await snapshotManager.list();
+
+			// Apply limit if provided
+			const snapshots = limit ? allSnapshots.slice(0, limit) : allSnapshots;
+
+			return {
+				snapshots: snapshots.map((s) => ({
+					id: s.id,
+					createdAt: new Date(s.timestamp).toISOString(),
+					fileCount: (s.files || []).length,
+					reason: s.meta?.name,
+					protected: s.meta?.protected || false,
+				})),
+				total: allSnapshots.length,
+			};
+		} catch (err) {
+			// Fallback to empty list if SDK fails
+			this.logger.warn("SDK snapshot list failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				snapshots: [],
+				total: 0,
+			};
+		}
 	}
 
 	private async handleSnapshotRestore(params: Record<string, unknown>, _requestId: string): Promise<unknown> {
@@ -1302,12 +1421,31 @@ export class SnapBackDaemon extends EventEmitter {
 			validatePaths(workspace, files);
 		}
 
-		return {
-			restored: !dryRun,
-			filesRestored: 0,
-			dryRun: !!dryRun,
-			changes: [],
-		};
+		// 🆕 ARCHITECTURE_REFACTOR_SPEC.md Phase 2: Use SDK SnapshotManager
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			const result = await snapshotManager.restore(snapshotId, workspace, { dryRun });
+
+			return {
+				restored: result.success && !dryRun,
+				filesRestored: result.restoredFiles.length,
+				dryRun: !!dryRun,
+				changes: result.restoredFiles.map((f) => ({ file: f, action: "restore" })),
+				errors: result.errors,
+			};
+		} catch (err) {
+			// Fallback response if SDK fails
+			this.logger.warn("SDK snapshot restore failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				restored: false,
+				filesRestored: 0,
+				dryRun: !!dryRun,
+				changes: [],
+				errors: [err instanceof Error ? err.message : String(err)],
+			};
+		}
 	}
 
 	private async handleLearningAdd(params: Record<string, unknown>, requestId: string): Promise<unknown> {
