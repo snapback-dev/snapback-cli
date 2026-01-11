@@ -38,6 +38,8 @@ import {
 // =============================================================================
 
 const DEFAULT_API_URL = process.env.SNAPBACK_API_URL || "https://api.snapback.dev";
+// Better Auth endpoints are on the web console, not the API
+const BETTER_AUTH_URL = process.env.SNAPBACK_WEB_URL || "https://console.snapback.dev";
 const AUTH_CALLBACK_PORT = 51234;
 const AUTH_TIMEOUT_MS = 120000; // 2 minutes
 const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
@@ -192,6 +194,9 @@ async function loginWithBrowser(): Promise<void> {
 
 /**
  * Login with device code (for remote/headless environments)
+ *
+ * Uses RFC 8628 Device Authorization Grant via Better Auth.
+ * User visits verification URL in any browser, enters code, and approves.
  */
 async function loginWithDeviceCode(): Promise<void> {
 	const spinner = ora("Requesting device code...").start();
@@ -199,25 +204,29 @@ async function loginWithDeviceCode(): Promise<void> {
 	try {
 		await createGlobalDirectory();
 
-		// Request device code from server
-		const response = await fetch(`${DEFAULT_API_URL}/auth/device`, {
+		// Request device code from Better Auth endpoint on web app
+		// Better Auth's deviceAuthorization plugin handles RFC 8628 compliance
+		const response = await fetch(`${BETTER_AUTH_URL}/api/auth/device/code`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
-				clientId: "snapback-cli",
-				deviceInfo: getDeviceInfo(),
+				client_id: "snapback-cli",
+				scope: "cli:snapshots api:read api:write",
 			}),
 		});
 
 		if (!response.ok) {
-			throw new Error(`Server returned ${response.status}`);
+			const errorText = await response.text();
+			throw new Error(`Server returned ${response.status}: ${errorText}`);
 		}
 
+		// Better Auth returns RFC 8628 compliant response
 		const data = (await response.json()) as {
-			deviceCode: string;
-			userCode: string;
-			verificationUri: string;
-			expiresIn: number;
+			device_code: string;
+			user_code: string;
+			verification_uri: string;
+			verification_uri_complete?: string;
+			expires_in: number;
 			interval: number;
 		};
 
@@ -225,14 +234,19 @@ async function loginWithDeviceCode(): Promise<void> {
 		console.log();
 		console.log(chalk.cyan("To complete login:"));
 		console.log();
-		console.log("  1. Visit:", chalk.underline(data.verificationUri));
-		console.log("  2. Enter code:", chalk.bold.yellow(data.userCode));
+		console.log("  1. Visit:", chalk.underline(data.verification_uri));
+		console.log("  2. Enter code:", chalk.bold.yellow(data.user_code));
 		console.log();
+
+		// Try to open browser automatically if verification_uri_complete is provided
+		if (data.verification_uri_complete) {
+			await openBrowser(data.verification_uri_complete);
+		}
 
 		spinner.start("Waiting for authorization...");
 
-		// Poll for token
-		const credentials = await pollForToken(data.deviceCode, data.interval, data.expiresIn);
+		// Poll for token using Better Auth endpoint
+		const credentials = await pollForToken(data.device_code, data.interval, data.expires_in);
 
 		spinner.succeed("Logged in successfully");
 		console.log();
@@ -404,54 +418,81 @@ async function startCallbackServer(): Promise<CallbackResult> {
 // =============================================================================
 
 /**
- * Poll the server for token after device code auth
+ * Poll the server for token after device code auth (RFC 8628 compliant)
+ *
+ * Uses Better Auth's device token endpoint which returns:
+ * - access_token on success
+ * - "authorization_pending" error while waiting
+ * - "slow_down" error if polling too fast
  */
 async function pollForToken(deviceCode: string, interval: number, expiresIn: number): Promise<GlobalCredentials> {
 	const endTime = Date.now() + expiresIn * 1000;
-	const pollInterval = Math.max(interval, 5) * 1000; // Minimum 5 seconds
+	let pollInterval = Math.max(interval, 5) * 1000; // Minimum 5 seconds per RFC 8628
 
 	while (Date.now() < endTime) {
 		await sleep(pollInterval);
 
-		const response = await fetch(`${DEFAULT_API_URL}/auth/device/token`, {
+		// Poll Better Auth's device token endpoint
+		const response = await fetch(`${BETTER_AUTH_URL}/api/auth/device/token`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ deviceCode }),
+			body: JSON.stringify({
+				device_code: deviceCode,
+				grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+				client_id: "snapback-cli",
+			}),
 		});
 
 		if (response.ok) {
+			// Success! Parse the token response
 			const data = (await response.json()) as {
-				accessToken: string;
-				refreshToken?: string;
-				email: string;
-				tier: "free" | "pro";
-				expiresIn: number;
+				access_token: string;
+				refresh_token?: string;
+				token_type: string;
+				expires_in: number;
+				// Custom fields from Better Auth
+				user?: {
+					email: string;
+					name?: string;
+				};
+				tier?: "free" | "pro";
 			};
 
 			const credentials: GlobalCredentials = {
-				accessToken: data.accessToken,
-				refreshToken: data.refreshToken,
-				email: data.email,
-				tier: data.tier,
-				expiresAt: new Date(Date.now() + data.expiresIn * 1000).toISOString(),
+				accessToken: data.access_token,
+				refreshToken: data.refresh_token,
+				email: data.user?.email || "user@snapback.dev",
+				tier: data.tier || "free",
+				expiresAt: new Date(Date.now() + data.expires_in * 1000).toISOString(),
 			};
 
 			await saveCredentials(credentials);
 			return credentials;
 		}
 
+		// Handle RFC 8628 error responses
 		if (response.status === 400) {
-			const error = (await response.json()) as { error: string };
-			if (error.error === "authorization_pending") {
-				// Continue polling
-				continue;
+			const error = (await response.json()) as { error: string; error_description?: string };
+
+			switch (error.error) {
+				case "authorization_pending":
+					// User hasn't approved yet - continue polling
+					continue;
+
+				case "slow_down":
+					// Server requested slower polling - increase interval by 5s (RFC 8628 §3.5)
+					pollInterval += 5000;
+					continue;
+
+				case "access_denied":
+					throw new Error("Authorization denied by user");
+
+				case "expired_token":
+					throw new Error("Device code expired. Please try again.");
+
+				default:
+					throw new Error(error.error_description || error.error);
 			}
-			if (error.error === "slow_down") {
-				// Increase interval
-				await sleep(5000);
-				continue;
-			}
-			throw new Error(error.error);
 		}
 
 		throw new Error(`Server returned ${response.status}`);
@@ -594,8 +635,10 @@ async function openBrowser(url: string): Promise<void> {
 
 /**
  * Get device info for device code auth
+ *
+ * @remarks Kept for potential future use in device metadata
  */
-function getDeviceInfo(): {
+function _getDeviceInfo(): {
 	hostname: string;
 	platform: string;
 	user: string;
