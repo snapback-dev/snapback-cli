@@ -1,15 +1,7 @@
-import { defineConfig } from "tsup";
+// DTS disabled: tsup DTS generation conflicts with composite TypeScript project setup.
+// Type declarations are generated separately via `tsc --build tsconfig.build.json --emitDeclarationOnly`
+import { dtsFalseLibraryPreset } from "../../tooling/tsup-config";
 
-export default defineConfig({
-	entry: ["src/index.ts"],
-	format: ["esm"],
-	// DTS disabled: tsup DTS generation conflicts with composite TypeScript project setup.
-	// Type declarations are generated separately via `tsc --build tsconfig.build.json --emitDeclarationOnly`
-	// in the build script (see package.json). This avoids TS6307 errors about missing files in project.
-	dts: false,
+export default dtsFalseLibraryPreset({
 	splitting: true,
-	sourcemap: true,
-	clean: true,
-	outDir: "dist",
-	tsconfig: "tsconfig.json",
 });
