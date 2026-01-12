@@ -37,6 +37,7 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
+    "@snapback/core-runtime": "workspace:*",
     "@snapback/mcp": "workspace:*",
     "@snapback/mcp-config": "workspace:*",
     "@snapback/engine": "workspace:*",

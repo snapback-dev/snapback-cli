@@ -23,7 +23,7 @@ import { createServer as createHttpServer, type Server as HttpServer } from "nod
 import { createServer, type Server, type Socket } from "node:net";
 import { platform } from "node:os";
 import { dirname, join, relative } from "node:path";
-
+import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core-runtime";
 import { Intelligence } from "@snapback/intelligence";
 import { LocalStorage, SnapshotManager } from "@snapback/sdk";
 
@@ -96,6 +96,72 @@ function getIntelligence(workspaceRoot: string): Intelligence {
 		intelligenceInstances.set(workspaceRoot, intel);
 	}
 	return intelligenceInstances.get(workspaceRoot)!;
+}
+
+// =============================================================================
+// RUNTIME ROUTER SINGLETON (ADR-001 Core Runtime Architecture)
+// =============================================================================
+
+/**
+ * RuntimeRouter instances per workspace (singleton pattern for ADR-001 compliance)
+ * Per ADR-001: Use RuntimeRouter for connectivity-aware routing between local and platform.
+ * Daemon operates in local-first mode with privacy by default.
+ */
+export const runtimeRouterInstances = new Map<string, RuntimeRouter>();
+
+/**
+ * Get or create RuntimeRouter instance for a workspace.
+ * Per ADR-001: Routes snapshot operations through RuntimeRouter instead of direct storage access.
+ *
+ * @param workspaceRoot - Absolute path to workspace root
+ * @returns RuntimeRouter instance configured for local-first operation
+ */
+export function getRuntimeRouter(workspaceRoot: string): RuntimeRouter {
+	if (!runtimeRouterInstances.has(workspaceRoot)) {
+		// Create storage adapter (SQLite-based, same as SnapshotManager)
+		const dbPath = join(workspaceRoot, ".snapback", "snapshots.db");
+		const storage = new LocalStorage(dbPath);
+
+		// Wrap storage with LocalEngineAdapter (ADR-001 ILocalEngine interface)
+		const localEngine = new LocalEngineAdapter(storage as unknown as ISnapshotStorage);
+
+		// Create runtime context for daemon (local-first, privacy by default)
+		const context = createRuntimeContext({
+			connectivity: "offline", // Daemon assumes local-first operation
+			authState: "anonymous", // No platform auth in daemon
+			tier: "free",
+			privacyMode: true, // Privacy by default for local operations
+			featureFlags: {},
+			workspace: {
+				path: workspaceRoot,
+			},
+		});
+
+		// Create RuntimeRouter with local engine only (no platform runtime for daemon)
+		const router = new RuntimeRouter(
+			localEngine,
+			null, // No platform runtime - daemon is local-only
+			context,
+			{
+				enableSyncQueue: false, // No sync queue for local-only daemon
+			},
+		);
+
+		runtimeRouterInstances.set(workspaceRoot, router);
+	}
+
+	return runtimeRouterInstances.get(workspaceRoot)!;
+}
+
+/**
+ * Dispose all RuntimeRouter instances.
+ * Should be called during daemon shutdown for proper resource cleanup.
+ */
+export async function disposeRuntimeRouters(): Promise<void> {
+	const disposePromises = Array.from(runtimeRouterInstances.values()).map((router) => router.dispose());
+
+	await Promise.all(disposePromises);
+	runtimeRouterInstances.clear();
 }
 
 // =============================================================================
