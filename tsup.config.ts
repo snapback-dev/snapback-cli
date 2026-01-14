@@ -15,5 +15,7 @@ export default dtsFalseLibraryPreset({
 		"@snapback/intelligence",
 		"@snapback/sdk",
 		"@snapback-oss/sdk", // OSS SDK re-exported by Pro SDK
+		"@snapback-oss/infrastructure", // Required by OSS SDK
+		"@snapback-oss/contracts", // Required by OSS SDK
 	],
 });
