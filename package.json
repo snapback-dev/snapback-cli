@@ -1,0 +1,97 @@
+{
+  "name": "@snapback/cli",
+  "version": "0.2.1",
+  "description": "CLI tool for managing SnapBack snapshots and file protection",
+  "homepage": "https://snapback.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snapback-dev/snapback-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snapback-dev/snapback-cli/issues"
+  },
+  "license": "Apache-2.0",
+  "author": {
+    "name": "SnapBack Team",
+    "url": "https://snapback.dev"
+  },
+  "keywords": [
+    "snapback",
+    "cli",
+    "file-protection",
+    "snapshots",
+    "backup"
+  ],
+  "bin": {
+    "snapback": "dist/index.js",
+    "snap": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@inquirer/prompts": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@snapback/contracts": "workspace:*",
+    "@snapback/core": "workspace:*",
+    "@snapback/core-runtime": "workspace:*",
+    "@snapback/mcp": "workspace:*",
+    "@snapback/mcp-config": "workspace:*",
+    "@snapback/engine": "workspace:*",
+    "@snapback/intelligence": "workspace:*",
+    "@snapback/sdk": "workspace:*",
+    "boxen": "catalog:",
+    "chalk": "catalog:",
+    "chokidar": "catalog:",
+    "cli-table3": "catalog:",
+    "commander": "catalog:",
+    "conf": "catalog:",
+    "esprima": "catalog:",
+    "execa": "catalog:",
+    "log-update": "catalog:",
+    "ora": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "scripts": {
+    "build": "tsup && tsc --build tsconfig.build.json --emitDeclarationOnly",
+    "check": "biome check .",
+    "dev": "tsup --watch",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --fix .",
+    "prepublishOnly": "pnpm run build && pnpm run test",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "cli:install": "pnpm build && pnpm link --global && echo '✅ CLI installed globally. Run: snap --help or snapback --help'",
+    "cli:uninstall": "pnpm unlink --global && echo '✅ CLI uninstalled globally'",
+    "cli:reinstall": "pnpm run cli:uninstall && pnpm run cli:install",
+    "mcp:configure": "node dist/index.js tools configure --yes",
+    "mcp:configure:dev": "node dist/index.js tools configure --yes --dev",
+    "mcp:status": "node dist/index.js tools configure --list"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./services/snapback-dir": "./dist/services/snapback-dir.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=8.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

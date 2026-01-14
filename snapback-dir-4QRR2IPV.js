@@ -1,0 +1,5 @@
+export { appendSnapbackJsonl, clearCredentials, createGlobalDirectory, createSnapbackDirectory, deleteGlobalJson, endCurrentSession, findWorkspaceRoot, getCredentials, getCurrentSession, getGlobalConfig, getGlobalDir, getGlobalPath, getLearnings, getProtectedFiles, getStats, getViolations, getWorkspaceConfig, getWorkspaceDir, getWorkspacePath, getWorkspaceVitals, isLoggedIn, isSnapbackInitialized, loadSnapbackJsonl, pathExists, readGlobalJson, readSnapbackJson, recordLearning, recordViolation, saveCredentials, saveCurrentSession, saveGlobalConfig, saveProtectedFiles, saveWorkspaceConfig, saveWorkspaceVitals, writeGlobalJson, writeSnapbackJson } from './chunk-KSPLKCVF.js';
+export { generateId } from './chunk-BCIXMIPW.js';
+import './chunk-WCQVDF3K.js';
+//# sourceMappingURL=snapback-dir-4QRR2IPV.js.map
+//# sourceMappingURL=snapback-dir-4QRR2IPV.js.map
