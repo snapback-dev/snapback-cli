@@ -5,13 +5,12 @@
   "homepage": "https://snapback.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/snapback.git",
-    "directory": "apps/cli"
+    "url": "https://github.com/snapback-dev/snapback-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/snapback/issues"
+    "url": "https://github.com/snapback-dev/snapback-cli/issues"
   },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": {
     "name": "SnapBack Team",
     "url": "https://snapback.dev"
