@@ -1,6 +1,6 @@
 {
   "name": "@snapback/cli",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "CLI tool for managing SnapBack snapshots and file protection",
   "homepage": "https://snapback.dev",
   "repository": {
@@ -98,7 +98,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --fix .",
-    "prepublishOnly": "pnpm run build && pnpm run test",
+    "prepublishOnly": "node -e \"if(!process.env.npm_execpath?.includes('pnpm')){console.error('\\x1b[31mERROR: Use pnpm publish, not npm publish (catalog: protocol requires pnpm)\\x1b[0m');process.exit(1)}\" && pnpm run build && pnpm run test",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
