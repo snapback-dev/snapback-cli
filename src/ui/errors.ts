@@ -136,33 +136,64 @@ export const ERROR_SUGGESTIONS: ErrorSuggestion[] = [
 // COMMAND SUGGESTIONS (for typos)
 // =============================================================================
 
-const KNOWN_COMMANDS = [
-	"login",
-	"logout",
-	"whoami",
-	"init",
-	"status",
-	"fix",
-	"protect",
-	"session",
-	"context",
-	"validate",
-	"stats",
-	"learn",
-	"patterns",
-	"watch",
-	"tools",
-	"mcp",
-	"config",
-	"doctor",
-	"upgrade",
-	"analyze",
-	"snapshot",
-	"list",
-	"check",
-	"interactive",
-	"help",
+/**
+ * Known commands with descriptions for better suggestions
+ */
+const KNOWN_COMMANDS: Array<{ name: string; description: string; aliases?: string[] }> = [
+	{ name: "login", description: "Authenticate with SnapBack" },
+	{ name: "logout", description: "Log out of SnapBack" },
+	{ name: "whoami", description: "Show current user" },
+	{ name: "init", description: "Initialize workspace" },
+	{ name: "status", description: "Show workspace status" },
+	{ name: "fix", description: "Apply fixes to code" },
+	{ name: "protect", description: "Protect files from changes" },
+	{ name: "session", description: "Manage sessions" },
+	{ name: "context", description: "Get context for files" },
+	{ name: "validate", description: "Validate patterns" },
+	{ name: "stats", description: "Show statistics" },
+	{ name: "learn", description: "Learn from patterns" },
+	{ name: "patterns", description: "Manage patterns" },
+	{ name: "watch", description: "Watch for changes" },
+	{ name: "tools", description: "Configure AI tools" },
+	{ name: "mcp", description: "Run MCP server" },
+	{ name: "config", description: "Manage configuration" },
+	{ name: "doctor", description: "Diagnose issues" },
+	{ name: "upgrade", description: "Upgrade SnapBack" },
+	{ name: "analyze", description: "Analyze file risks" },
+	// §15.1: snapshot has aliases ss and snap
+	{ name: "snapshot", description: "Create a code snapshot", aliases: ["ss", "snap"] },
+	{ name: "list", description: "List snapshots" },
+	{ name: "check", description: "Pre-commit risk check" },
+	{ name: "interactive", description: "Interactive mode" },
+	{ name: "help", description: "Show help" },
 ];
+
+/**
+ * Intent-based mappings for better suggestions
+ * Maps common user intents to the correct command
+ * §15.2: "snap" MUST suggest "snapshot" first
+ */
+const INTENT_MAPPINGS: Record<string, string> = {
+	// Snapshot-related intents
+	snap: "snapshot",
+	ss: "snapshot",
+	snapshot: "snapshot",
+	save: "snapshot",
+	backup: "snapshot",
+	store: "snapshot",
+	capture: "snapshot",
+	// Check-related intents
+	verify: "check",
+	validate: "check",
+	test: "check",
+	// Auth-related intents
+	auth: "login",
+	signin: "login",
+	signon: "login",
+	// Status-related intents
+	info: "status",
+	show: "status",
+};
 
 /**
  * Calculate Levenshtein distance between two strings
@@ -196,19 +227,43 @@ function levenshteinDistance(a: string, b: string): number {
 
 /**
  * Find similar commands for typo suggestions
+ * §15.2: Prefers intent matches over string distance
  */
 export function findSimilarCommands(input: string, maxSuggestions = 3): string[] {
 	const inputLower = input.toLowerCase();
 
-	// Calculate distances and filter
+	// §15.2: Check intent mapping first (e.g., "snap" -> "snapshot")
+	const intentMatch = INTENT_MAPPINGS[inputLower];
+	if (intentMatch) {
+		const cmd = KNOWN_COMMANDS.find((c) => c.name === intentMatch);
+		if (cmd) {
+			// Return intent match as first suggestion, then other similar commands
+			const others = KNOWN_COMMANDS.filter((c) => c.name !== intentMatch)
+				.map((c) => ({ name: c.name, distance: levenshteinDistance(inputLower, c.name) }))
+				.filter((s) => s.distance <= 3)
+				.sort((a, b) => a.distance - b.distance)
+				.slice(0, maxSuggestions - 1)
+				.map((s) => s.name);
+			return [intentMatch, ...others];
+		}
+	}
+
+	// Check if input matches an alias
+	for (const cmd of KNOWN_COMMANDS) {
+		if (cmd.aliases?.includes(inputLower)) {
+			return [cmd.name];
+		}
+	}
+
+	// Fallback: Calculate Levenshtein distances
 	const suggestions = KNOWN_COMMANDS.map((cmd) => ({
-		command: cmd,
-		distance: levenshteinDistance(inputLower, cmd),
+		name: cmd.name,
+		distance: levenshteinDistance(inputLower, cmd.name),
 	}))
 		.filter((s) => s.distance <= 3) // Only suggest if within 3 edits
 		.sort((a, b) => a.distance - b.distance)
 		.slice(0, maxSuggestions)
-		.map((s) => s.command);
+		.map((s) => s.name);
 
 	return suggestions;
 }

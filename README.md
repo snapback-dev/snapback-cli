@@ -36,6 +36,7 @@ SnapBack has two primary interfaces:
 ### 🎨 VS Code Extension (Recommended)
 
 The extension provides the best experience with automatic snapshots, visual recovery UI, and real-time risk indicators.
+
 ```
 ext install snapback-vscode
 ```
@@ -47,6 +48,7 @@ Or search "SnapBack" in the VS Code Extensions marketplace.
 ### 💻 CLI Tool
 
 For terminal workflows, CI/CD integration, and MCP server setup:
+
 ```bash
 # Install globally
 npm install -g @snapback/cli
@@ -58,6 +60,7 @@ npx @snapback/cli <command>
 ---
 
 ## Quick Start
+
 ```bash
 # Interactive setup wizard (recommended for first-time users)
 snap wizard
@@ -87,6 +90,7 @@ SnapBack includes an MCP (Model Context Protocol) server that lets AI assistants
 ### Quick Setup (Recommended)
 
 The CLI can automatically configure MCP for all detected AI tools:
+
 ```bash
 # Auto-detect and configure all AI tools
 snap tools configure
@@ -102,6 +106,7 @@ snap tools configure --windsurf
 If you prefer manual configuration or the auto-setup doesn't work, add this to your AI tool's MCP config:
 
 #### Option 1: Using npx (Recommended)
+
 ```json
 {
   "mcpServers": {
@@ -124,6 +129,7 @@ If you prefer manual configuration or the auto-setup doesn't work, add this to y
 ```
 
 #### Option 2: Using Global Install
+
 ```json
 {
   "mcpServers": {
@@ -144,6 +150,7 @@ If you prefer manual configuration or the auto-setup doesn't work, add this to y
 ```
 
 #### Option 3: Using Node Directly
+
 ```json
 {
   "mcpServers": {
@@ -176,11 +183,13 @@ If you prefer manual configuration or the auto-setup doesn't work, add this to y
 ### Workspace Requirements
 
 The MCP server requires at least one of these markers in your project:
+
 - `.git/` directory
 - `package.json` file
 - `.snapback/` directory
 
 ### Verify Setup
+
 ```bash
 # Check which tools are configured
 snap tools status
@@ -343,6 +352,7 @@ When you run `snap validate` or `snap check`, SnapBack analyzes your code across
 | **Security** | Hardcoded secrets, `eval()` |
 | **Dependencies** | Deprecated packages |
 | **Performance** | `console.log`, sync I/O, `await` in loops |
+
 ```bash
 # Validate a single file
 snap validate src/auth.ts
@@ -365,6 +375,7 @@ SnapBack tracks violations and automatically promotes patterns:
 | **1×** | Stored in `violations.jsonl` |
 | **3×** | Auto-promoted to `workspace-patterns.json` |
 | **5×** | Marked for automated detection |
+
 ```bash
 # Report a violation manually
 snap patterns report
@@ -380,6 +391,7 @@ snap patterns summary
 SnapBack implements best practices from GitHub CLI, Vercel CLI, and Stripe CLI.
 
 ### Smart Error Messages
+
 ```
 ╭───────────────────────────────────────────────────╮
 │ [ERR_NOT_INIT] Workspace Not Initialized          │
@@ -395,6 +407,7 @@ SnapBack implements best practices from GitHub CLI, Vercel CLI, and Stripe CLI.
 ```
 
 ### Typo Detection
+
 ```
 $ snap statis
 ╭────────────────────────────────────────╮
@@ -407,6 +420,7 @@ $ snap statis
 ```
 
 ### Command Aliases
+
 ```bash
 # Create shortcuts
 snap alias set st status
@@ -418,6 +432,7 @@ snap ss -m "checkpoint"
 ```
 
 ### Dry-Run Mode
+
 ```bash
 snap init --dry-run
 # Shows what will be created without making changes
@@ -427,6 +442,7 @@ snap tools configure --dry-run
 ```
 
 ### Shell Completions
+
 ```bash
 # Bash
 eval "$(snap completion bash)"
@@ -439,6 +455,7 @@ snap completion fish | source
 ```
 
 Completion scripts are also available at:
+
 - `resources/completions/snap.bash`
 - `resources/completions/snap.zsh`
 - `resources/completions/snap.fish`
@@ -448,6 +465,7 @@ Completion scripts are also available at:
 ## Pre-Commit Hook Integration
 
 ### Git Hook
+
 ```bash
 #!/bin/sh
 # .git/hooks/pre-commit
@@ -455,6 +473,7 @@ npx @snapback/cli check --snapshot --quiet
 ```
 
 ### Lefthook
+
 ```yaml
 # .lefthook.yml
 pre-commit:
@@ -464,6 +483,7 @@ pre-commit:
 ```
 
 ### GitHub Actions
+
 ```yaml
 - name: Validate code
   run: npx @snapback/cli validate --all --json > validation.json
@@ -479,6 +499,7 @@ pre-commit:
 ### Workspace Structure
 
 After `snap init`:
+
 ```
 your-project/
 ├── .snapback/
@@ -494,6 +515,7 @@ your-project/
 ```
 
 ### `.snapbackrc` Options
+
 ```json
 {
   "protectionLevel": "warn",
@@ -506,6 +528,7 @@ your-project/
 ---
 
 ## Diagnostics
+
 ```bash
 $ snap doctor
 

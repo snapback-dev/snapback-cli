@@ -231,8 +231,12 @@ export function createCLI() {
 			}
 		});
 
+	// Snapshot command with aliases per spec §15.1
 	program
 		.command("snapshot")
+		.alias("ss")
+		.alias("snap")
+		.description("Create a code snapshot (aliases: ss, snap)")
 		.option("-m, --message <message>", "Add a message to the snapshot")
 		.option("-f, --files <files...>", "Specify files to include in snapshot")
 		.action(async (options) => {
@@ -332,12 +336,38 @@ export function createCLI() {
 	program
 		.command("check")
 		.description("Pre-commit hook to check for risky AI changes")
+		.option("-m, --mode <mode>", "Check mode: quick (default), build, architecture, learnings")
 		.option("-s, --snapshot", "Create snapshot if risky changes detected")
 		.option("-q, --quiet", "Suppress output unless issues found")
 		.option("-a, --all", "Check all files, not just staged (legacy behavior)")
 		.action(async (options) => {
 			const cwd = process.cwd();
+			const mode = options.mode || "quick";
 
+			// §14.3: Handle different check modes
+			if (mode === "build") {
+				// Build mode - run TypeScript build
+				const { execSync } = await import("node:child_process");
+				try {
+					console.log(chalk.cyan("Running build check..."));
+					execSync("pnpm build", { cwd, stdio: "inherit" });
+					console.log(chalk.green("✓ Build passed"));
+				} catch (error) {
+					console.error(chalk.red("✗ Build failed"));
+					process.exit(1);
+				}
+				return;
+			}
+
+			if (mode === "architecture" || mode === "learnings" || mode === "circular" || mode === "docs") {
+				// These modes are best handled by MCP check tool
+				console.log(chalk.yellow(`Check mode "${mode}" is available via MCP tools.`));
+				console.log(chalk.gray("In your AI client, use: check(mode: \"" + mode + "\")"));
+				console.log(chalk.gray("\nSupported CLI modes: quick, build"));
+				return;
+			}
+
+			// Default: quick mode (staged file risk analysis)
 			try {
 				// CLI-UX-002: Use GitClient for staged files
 				const git = new GitClient({ cwd });
