@@ -111,7 +111,7 @@ ${chalk.cyan("Quick Start:")}
   ${chalk.gray("2.")} ${chalk.cyan("snap init")}       ${chalk.gray("Initialize workspace")}
   ${chalk.gray("3.")} ${chalk.cyan("snap tools configure")} ${chalk.gray("Set up AI tools")}
 
-${chalk.dim("Learn more: https://snapback.dev/docs")}
+${chalk.dim("Learn more: https://docs.snapback.dev")}
 `;
 
 	return message;
