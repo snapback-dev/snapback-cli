@@ -59,7 +59,7 @@ export const ERROR_SUGGESTIONS: ErrorSuggestion[] = [
 	},
 	{
 		pattern: /invalid.*api.*key/i,
-		suggestion: "Your API key appears to be invalid. Get a new one at snapback.dev/settings",
+		suggestion: "Your API key appears to be invalid. Get a new one at console.snapback.dev/settings",
 		command: "snap login --api-key <your-key>",
 	},
 

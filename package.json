@@ -1,6 +1,6 @@
 {
   "name": "@snapback/cli",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "CLI tool for managing SnapBack snapshots and file protection",
   "homepage": "https://snapback.dev",
   "repository": {
@@ -28,6 +28,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
@@ -92,6 +93,7 @@
     "vitest": "catalog:"
   },
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "build": "tsup && tsc --build tsconfig.build.json --emitDeclarationOnly",
     "check": "biome check .",
     "dev": "tsup --watch",

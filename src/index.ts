@@ -48,6 +48,10 @@ import { isLoggedIn, isSnapbackInitialized } from "./services/snapback-dir";
 import { userState } from "./services/state";
 // Smart Errors UI
 import { displayUnknownCommandError } from "./ui/errors";
+
+// Branding (re-exported for postinstall script)
+export { displayWelcomeMessage } from "./ui/logo";
+
 // CLI-UX-001, 003, 004: UX Utilities
 import {
 	createFileSummaryTable,
