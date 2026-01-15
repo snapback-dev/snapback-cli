@@ -55,6 +55,7 @@ export function createToolsCommand(): Command {
 		.option("--force", "Reconfigure even if already set up")
 		.option("-y, --yes", "Skip confirmation prompts (for CI/scripts)")
 		.option("--api-key <key>", "API key for Pro features")
+		.option("--npm", "Use npm-installed CLI via npx (recommended for npm users)")
 		.option("--dev", "Use local development mode (direct node execution with inferred workspace)")
 		.option("--workspace <path>", "Override workspace root path")
 
@@ -110,6 +111,7 @@ export function createToolsCommand(): Command {
 						options.yes,
 						options.apiKey,
 						options.dev,
+						options.npm,
 						options.workspace,
 					);
 				} else {
@@ -120,6 +122,7 @@ export function createToolsCommand(): Command {
 							options.yes,
 							options.apiKey,
 							options.dev,
+							options.npm,
 							options.workspace,
 						);
 					}
@@ -197,6 +200,7 @@ async function autoConfigureTools(
 	skipPrompts = false,
 	providedApiKey?: string,
 	devMode = false,
+	npmMode = false,
 	workspaceOverride?: string,
 ): Promise<void> {
 	const detection = detectAIClients();
@@ -247,7 +251,7 @@ async function autoConfigureTools(
 
 	// Configure each tool that needs setup
 	for (const client of needsSetup) {
-		await configureClient(client, dryRun, apiKey, devMode, workspaceOverride);
+		await configureClient(client, dryRun, apiKey, devMode, npmMode, workspaceOverride);
 	}
 
 	showNextSteps();
@@ -262,6 +266,7 @@ async function configureTool(
 	skipPrompts = false,
 	providedApiKey?: string,
 	devMode = false,
+	npmMode = false,
 	workspaceOverride?: string,
 ): Promise<void> {
 	const detection = detectAIClients();
@@ -282,7 +287,7 @@ async function configureTool(
 	// Get API key (from flag, env, login, or prompt)
 	const apiKey = await resolveApiKey(providedApiKey, skipPrompts);
 
-	await configureClient(client, dryRun, apiKey, devMode, workspaceOverride);
+	await configureClient(client, dryRun, apiKey, devMode, npmMode, workspaceOverride);
 	showNextSteps();
 }
 
@@ -294,12 +299,13 @@ async function configureClient(
 	dryRun: boolean,
 	apiKey?: string,
 	devMode = false,
+	npmMode = false,
 	workspaceOverride?: string,
 ): Promise<void> {
 	const spinner = ora(`Configuring ${client.displayName}...`).start();
 
 	try {
-		// Resolve workspace root for dev mode
+		// Resolve workspace root for dev mode or npm mode
 		let workspaceRoot: string | undefined;
 		let localCliPath: string | undefined;
 
@@ -315,6 +321,10 @@ async function configureClient(
 			}
 
 			spinner.text = `Configuring ${client.displayName} (dev mode)...`;
+		} else if (npmMode) {
+			// npm mode also benefits from workspace path for the MCP server
+			workspaceRoot = workspaceOverride || findWorkspaceRoot(process.cwd());
+			spinner.text = `Configuring ${client.displayName} (npm/npx mode)...`;
 		}
 
 		// Pre-flight validation: Check existing config for issues
@@ -336,6 +346,7 @@ async function configureClient(
 		// Build MCP config
 		const mcpConfig = getSnapbackMCPConfig({
 			apiKey,
+			useNpx: npmMode,
 			useLocalDev: devMode,
 			localCliPath,
 			workspaceRoot,
@@ -345,8 +356,14 @@ async function configureClient(
 			spinner.info(`Would configure ${client.displayName}`);
 			console.log(chalk.gray(`  Path: ${client.configPath}`));
 			if (devMode) {
+				console.log(chalk.gray("  Mode: Local development"));
 				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
 				console.log(chalk.gray(`  CLI Path: ${localCliPath}`));
+			} else if (npmMode) {
+				console.log(chalk.gray("  Mode: npm (npx @snapback/cli)"));
+				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
+			} else {
+				console.log(chalk.gray("  Mode: Remote server (https://snapback-mcp.fly.dev)"));
 			}
 			console.log(chalk.gray("  Config:"));
 			console.log(JSON.stringify(mcpConfig, null, 2));
@@ -359,8 +376,9 @@ async function configureClient(
 		if (result.success) {
 			// Post-write validation to ensure config was written correctly
 			const postValidation = validateClientConfig({ ...client, hasSnapback: true });
+			const modeLabel = devMode ? " (dev mode)" : npmMode ? " (npm mode)" : "";
 			if (postValidation.valid) {
-				spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
+				spinner.succeed(`Configured ${client.displayName}${modeLabel}`);
 			} else {
 				const warnings = postValidation.issues.filter((i) => i.severity === "warning");
 				if (warnings.length > 0) {
@@ -369,11 +387,11 @@ async function configureClient(
 						console.log(chalk.yellow(`  ⚠ ${warning.message}`));
 					}
 				} else {
-					spinner.succeed(`Configured ${client.displayName}${devMode ? " (dev mode)" : ""}`);
+					spinner.succeed(`Configured ${client.displayName}${modeLabel}`);
 				}
 			}
 			console.log(chalk.gray(`  Config: ${client.configPath}`));
-			if (devMode) {
+			if (devMode || npmMode) {
 				console.log(chalk.gray(`  Workspace: ${workspaceRoot}`));
 			}
 			if (result.backup) {
