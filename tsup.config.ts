@@ -1,21 +1,23 @@
 // DTS disabled: tsup DTS generation conflicts with composite TypeScript project setup.
 // Type declarations are generated separately via `tsc --build tsconfig.build.json --emitDeclarationOnly`
-import { dtsFalseLibraryPreset } from "../../tooling/tsup-config";
+import { defineConfig } from "tsup";
 
-export default dtsFalseLibraryPreset({
+export default defineConfig({
+	entry: ["src/index.ts"],
+	format: ["esm"],
+	dts: false,
+	clean: true,
+	sourcemap: true,
+	outDir: "dist",
 	splitting: true,
-	// Bundle workspace dependencies to create standalone CLI package
-	noExternal: [
-		"@snapback/contracts",
-		"@snapback/core",
-		"@snapback/core-runtime",
-		"@snapback/mcp",
-		"@snapback/mcp-config",
-		"@snapback/engine",
-		"@snapback/intelligence",
-		"@snapback/sdk",
-		"@snapback-oss/sdk", // OSS SDK re-exported by Pro SDK
-		"@snapback-oss/infrastructure", // Required by OSS SDK
-		"@snapback-oss/contracts", // Required by OSS SDK
-	],
+	treeshake: true,
+	target: "node20",
+	// Add shebang for CLI executable
+	banner: {
+		js: "#!/usr/bin/env node",
+	},
+	// Bundle workspace packages only - npm packages stay external
+	noExternal: [/^@snapback\//, /^@snapback-oss\//],
+	// Skip bundling node_modules - they'll be installed as dependencies
+	skipNodeModulesBundle: true,
 });
