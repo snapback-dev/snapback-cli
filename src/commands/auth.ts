@@ -148,6 +148,56 @@ export function createWhoamiCommand(): Command {
 }
 
 // =============================================================================
+// AUTO-PROVISION API KEY
+// =============================================================================
+
+/**
+ * Auto-provision API key after successful login
+ *
+ * Best practice: Auto-generate scoped API key on first login
+ * This eliminates the manual key creation friction point.
+ */
+async function autoProvisionApiKey(accessToken: string): Promise<string | null> {
+	try {
+		// Call the auto-provision endpoint with the session token
+		const response = await fetch(`${DEFAULT_API_URL}/orpc/apiKeys.autoProvision`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${accessToken}`,
+			},
+			body: JSON.stringify({ source: "cli" }),
+		});
+
+		if (!response.ok) {
+			// Non-fatal - user can still use basic features
+			console.error(chalk.yellow("Note: Could not auto-provision API key"));
+			return null;
+		}
+
+		const data = (await response.json()) as {
+			provisioned: boolean;
+			apiKey?: { key: string; keyPreview: string };
+			existingKey?: { keyPreview: string };
+		};
+
+		if (data.provisioned && data.apiKey?.key) {
+			return data.apiKey.key;
+		}
+
+		// Already had a key - that's fine
+		if (data.existingKey) {
+			console.log(chalk.gray(`  Using existing API key: ${data.existingKey.keyPreview}`));
+		}
+
+		return null;
+	} catch {
+		// Non-fatal error - continue without API key
+		return null;
+	}
+}
+
+// =============================================================================
 // LOGIN METHODS
 // =============================================================================
 
@@ -186,6 +236,14 @@ async function loginWithBrowser(): Promise<void> {
 		console.log();
 		console.log(chalk.green("✓"), "Welcome,", chalk.cyan(credentials.email));
 		console.log(chalk.green("✓"), "Tier:", formatTier(credentials.tier));
+
+		// Auto-provision API key for zero-friction MCP usage
+		const apiKey = await autoProvisionApiKey(credentials.accessToken);
+		if (apiKey) {
+			console.log(chalk.green("✓"), "API Key:", chalk.cyan(`${apiKey.slice(0, 12)}...`));
+			console.log();
+			console.log(chalk.gray("  Your API key has been auto-generated for MCP tools."));
+		}
 	} catch (error) {
 		spinner.fail("Login failed");
 		throw error;
@@ -252,6 +310,14 @@ async function loginWithDeviceCode(): Promise<void> {
 		console.log();
 		console.log(chalk.green("✓"), "Welcome,", chalk.cyan(credentials.email));
 		console.log(chalk.green("✓"), "Tier:", formatTier(credentials.tier));
+
+		// Auto-provision API key for zero-friction MCP usage
+		const apiKey = await autoProvisionApiKey(credentials.accessToken);
+		if (apiKey) {
+			console.log(chalk.green("✓"), "API Key:", chalk.cyan(`${apiKey.slice(0, 12)}...`));
+			console.log();
+			console.log(chalk.gray("  Your API key has been auto-generated for MCP tools."));
+		}
 	} catch (error) {
 		spinner.fail("Login failed");
 		throw error;

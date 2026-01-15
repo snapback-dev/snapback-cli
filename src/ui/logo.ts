@@ -16,9 +16,9 @@ import chalk from "chalk";
 
 /**
  * SnapBack ASCII art logo (large)
+ * Note: No leading newline - prevents terminal scroll issues
  */
-export const LOGO_LARGE = `
-███████╗███╗   ██╗ █████╗ ██████╗ ██████╗  █████╗  ██████╗██╗  ██╗
+export const LOGO_LARGE = `███████╗███╗   ██╗ █████╗ ██████╗ ██████╗  █████╗  ██████╗██╗  ██╗
 ██╔════╝████╗  ██║██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔════╝██║ ██╔╝
 ███████╗██╔██╗ ██║███████║██████╔╝██████╔╝███████║██║     █████╔╝
 ╚════██║██║╚██╗██║██╔══██║██╔═══╝ ██╔══██╗██╔══██║██║     ██╔═██╗
@@ -27,9 +27,9 @@ export const LOGO_LARGE = `
 
 /**
  * SnapBack ASCII art logo (compact)
+ * Note: No leading newline - prevents terminal scroll issues
  */
-export const LOGO_COMPACT = `
- ____                   ____             _
+export const LOGO_COMPACT = ` ____                   ____             _
 / ___| _ __   __ _ _ __|  _ \\ __ _  ___| | __
 \\___ \\| '_ \\ / _\` | '_ \\ |_) / _\` |/ __| |/ /
  ___) | | | | (_| | |_) |  _ < (_| | (__|   <
@@ -38,9 +38,9 @@ export const LOGO_COMPACT = `
 
 /**
  * Minimal logo for narrow terminals
+ * Note: No leading newline - prevents terminal scroll issues
  */
-export const LOGO_MINIMAL = `
-╔═╗┌┐┌┌─┐┌─┐╔╗ ┌─┐┌─┐┬┌─
+export const LOGO_MINIMAL = `╔═╗┌┐┌┌─┐┌─┐╔╗ ┌─┐┌─┐┬┌─
 ╚═╗│││├─┤├─┘╠╩╗├─┤│  ├┴┐
 ╚═╝┘└┘┴ ┴┴  ╚═╝┴ ┴└─┘┴ ┴`;
 
@@ -80,8 +80,8 @@ export function displayBrandedHeader(
 		lines.push("");
 		lines.push(
 			color
-				? `    ${chalk.yellow("🛡️")}  ${chalk.bold("Code Protection for AI-Native Development")}`
-				: "    🛡️  Code Protection for AI-Native Development",
+				? `    ${chalk.blue("🧢")}  ${chalk.bold("Code Protection for AI-Native Development")}`
+				: "    🧢  Code Protection for AI-Native Development",
 		);
 	}
 
