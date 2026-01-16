@@ -1,6 +1,6 @@
 {
   "name": "@snapback/cli",
-  "version": "1.0.11",
+  "version": "1.1.12",
   "description": "CLI tool for managing SnapBack snapshots and file protection",
   "homepage": "https://snapback.dev",
   "repository": {
