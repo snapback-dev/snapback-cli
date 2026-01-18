@@ -31,7 +31,6 @@ import {
  */
 type GlobalConfigKey = keyof GlobalConfig;
 type WorkspaceConfigKey = keyof WorkspaceConfig;
-type ConfigKey = GlobalConfigKey | WorkspaceConfigKey;
 
 /**
  * Config scope
@@ -442,8 +441,12 @@ function showConfigKeys(): void {
  * Determine config scope from options
  */
 function determineScope(options: { global?: boolean; local?: boolean }, schema: ConfigSchema): ConfigScope {
-	if (options.global) return "global";
-	if (options.local) return "local";
+	if (options.global) {
+		return "global";
+	}
+	if (options.local) {
+		return "local";
+	}
 
 	// Use schema default
 	return schema.scope[0];

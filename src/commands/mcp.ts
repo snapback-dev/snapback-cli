@@ -10,20 +10,31 @@
  * @module commands/mcp
  */
 
+import { homedir } from "node:os";
 import { type McpServerOptions, runStdioMcpServer } from "@snapback/mcp";
+import { resolveWorkspaceRoot } from "@snapback/mcp/middleware";
 import {
+	type AIClientConfig,
+	type AIClientFormat,
 	detectAIClients,
+	detectWorkspaceConfig,
 	getClient,
 	getServerKey,
 	getSnapbackMCPConfig,
 	removeSnapbackConfig,
 	validateConfig,
 	writeClientConfig,
-	type AIClientFormat,
 } from "@snapback/mcp-config";
-import { resolveWorkspaceRoot } from "@snapback/mcp/middleware";
 import chalk from "chalk";
 import { createCommand } from "commander";
+
+/**
+ * Check if a config path is global (not workspace-specific)
+ */
+function isGlobalConfigPath(configPath: string): boolean {
+	const home = homedir();
+	return configPath.includes(home) && !configPath.includes(process.cwd());
+}
 
 /**
  * Resolve user tier from multiple sources with priority:
@@ -57,8 +68,7 @@ export function createMcpCommand() {
 	// ==========================================================================
 	// Default action: Run MCP server with stdio transport
 	// ==========================================================================
-	cmd
-		.option("--stdio", "Use stdio transport (default)")
+	cmd.option("--stdio", "Use stdio transport (default)")
 		.option("--workspace <path>", "Workspace root path (auto-resolved if not provided)")
 		.option(
 			"--tier <tier>",
@@ -96,8 +106,7 @@ export function createMcpCommand() {
 	// ==========================================================================
 	// §14.1: mcp scan - Discover MCP configs across supported clients
 	// ==========================================================================
-	cmd
-		.command("scan")
+	cmd.command("scan")
 		.description("Discover MCP configs across supported AI clients")
 		.action(async () => {
 			try {
@@ -113,7 +122,9 @@ export function createMcpCommand() {
 					console.log(chalk.cyan(`\nDetected ${result.detected.length} client(s):`));
 					for (const client of result.detected) {
 						const serverKey = getServerKey(client.format);
-						const status = client.hasSnapback ? chalk.green("✓ Configured") : chalk.yellow("✗ Not configured");
+						const status = client.hasSnapback
+							? chalk.green("✓ Configured")
+							: chalk.yellow("✗ Not configured");
 						console.log(`  ${chalk.bold(client.displayName)}: ${status}`);
 						console.log(chalk.gray(`    Path: ${client.configPath}`));
 						console.log(chalk.gray(`    Key: ${serverKey}`));
@@ -131,9 +142,7 @@ export function createMcpCommand() {
 
 				// Summary
 				const configured = result.detected.filter((c) => c.hasSnapback).length;
-				console.log(
-					chalk.gray(`\nSummary: ${configured}/${result.detected.length} clients configured`),
-				);
+				console.log(chalk.gray(`\nSummary: ${configured}/${result.detected.length} clients configured`));
 			} catch (error) {
 				console.error(chalk.red("Scan failed:"), error instanceof Error ? error.message : String(error));
 				process.exit(1);
@@ -143,13 +152,9 @@ export function createMcpCommand() {
 	// ==========================================================================
 	// §14.1: mcp link - Write/update SnapBack entry in client config
 	// ==========================================================================
-	cmd
-		.command("link")
+	cmd.command("link")
 		.description("Configure SnapBack MCP server in an AI client")
-		.requiredOption(
-			"--client <client>",
-			"Target client (claude, cursor, vscode, qoder, windsurf, etc.)",
-		)
+		.requiredOption("--client <client>", "Target client (claude, cursor, vscode, qoder, windsurf, etc.)")
 		.option("--workspace <path>", "Workspace root path")
 		.option("--api-key <key>", "API key for Pro features")
 		.option("--workspace-id <id>", "Workspace ID")
@@ -195,7 +200,7 @@ export function createMcpCommand() {
 
 					// Validate
 					if (validateConfig(client)) {
-						console.log(chalk.green(`✓ Configuration validated`));
+						console.log(chalk.green("✓ Configuration validated"));
 					}
 				} else {
 					console.error(chalk.red(`✗ Failed to configure: ${result.error}`));
@@ -210,13 +215,9 @@ export function createMcpCommand() {
 	// ==========================================================================
 	// §14.1: mcp unlink - Remove SnapBack entry from client config
 	// ==========================================================================
-	cmd
-		.command("unlink")
+	cmd.command("unlink")
 		.description("Remove SnapBack MCP server from an AI client")
-		.requiredOption(
-			"--client <client>",
-			"Target client (claude, cursor, vscode, qoder, windsurf, etc.)",
-		)
+		.requiredOption("--client <client>", "Target client (claude, cursor, vscode, qoder, windsurf, etc.)")
 		.action(async (options) => {
 			try {
 				const clientName = options.client.toLowerCase() as AIClientFormat;
@@ -246,6 +247,88 @@ export function createMcpCommand() {
 				}
 			} catch (error) {
 				console.error(chalk.red("Unlink failed:"), error instanceof Error ? error.message : String(error));
+				process.exit(1);
+			}
+		});
+
+	// ==========================================================================
+	// §14.2: mcp fix-conflicts - Resolve configuration conflicts
+	// ==========================================================================
+	cmd.command("fix-conflicts")
+		.description("Resolve MCP configuration conflicts (workspace vs global)")
+		.option("--auto", "Automatically resolve conflicts (prefer workspace configs)", false)
+		.action(async (options) => {
+			try {
+				const result = detectAIClients();
+				const conflicts: Array<{
+					client: AIClientConfig;
+					globalPath: string;
+					workspacePath: string;
+					workspaceType: string;
+				}> = [];
+
+				// Detect conflicts: both workspace and global configs exist
+				for (const client of result.detected) {
+					if (client.hasSnapback) {
+						const workspaceConfig = detectWorkspaceConfig();
+						if (workspaceConfig && isGlobalConfigPath(client.configPath)) {
+							conflicts.push({
+								client,
+								globalPath: client.configPath,
+								workspacePath: workspaceConfig.path,
+								workspaceType: workspaceConfig.type,
+							});
+						}
+					}
+				}
+
+				if (conflicts.length === 0) {
+					console.log(chalk.green("\n✓ No MCP configuration conflicts detected"));
+					console.log(chalk.gray("  All configurations are properly scoped\n"));
+					return;
+				}
+
+				console.log(chalk.bold("\n🔍 MCP Configuration Conflicts\n"));
+				console.log(
+					chalk.yellow(`Found ${conflicts.length} conflict(s) - multiple configs for the same client\n`),
+				);
+
+				for (const conflict of conflicts) {
+					console.log(chalk.cyan(`${conflict.client.displayName}:`));
+					console.log(chalk.gray(`  Global:    ${conflict.globalPath}`));
+					console.log(chalk.gray(`  Workspace: ${conflict.workspacePath} (${conflict.workspaceType})`));
+					console.log();
+
+					if (options.auto) {
+						// Auto-resolve: remove global config, keep workspace
+						const result = removeSnapbackConfig(conflict.client);
+						if (result.success) {
+							console.log(chalk.green("  ✓ Removed global config (workspace takes precedence)"));
+						} else {
+							console.log(chalk.red(`  ✗ Failed to remove: ${result.error}`));
+						}
+					} else {
+						// Interactive mode - ask user
+						console.log(
+							chalk.yellow("  Recommendation: Keep workspace config, remove global to prevent conflicts"),
+						);
+					}
+
+					console.log();
+				}
+
+				if (options.auto) {
+					console.log(chalk.green("\n✓ All conflicts resolved"));
+					console.log(chalk.gray("  Restart your IDE/editor to apply changes\n"));
+				} else {
+					console.log(chalk.cyan("\nTo auto-resolve all conflicts, run:"));
+					console.log(chalk.gray("  snap mcp fix-conflicts --auto\n"));
+				}
+			} catch (error) {
+				console.error(
+					chalk.red("Fix conflicts failed:"),
+					error instanceof Error ? error.message : String(error),
+				);
 				process.exit(1);
 			}
 		});

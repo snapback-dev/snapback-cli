@@ -82,7 +82,9 @@ describe("SecureCredentialsManager - FIX 4", () => {
 			});
 
 			vi.mocked(readFile).mockImplementation(async () => {
-				if (storedData) return storedData;
+				if (storedData) {
+					return storedData;
+				}
 				throw new Error("File not found");
 			});
 
@@ -127,7 +129,9 @@ describe("SecureCredentialsManager - FIX 4", () => {
 			});
 
 			vi.mocked(readFile).mockImplementation(async () => {
-				if (storedData) return storedData;
+				if (storedData) {
+					return storedData;
+				}
 				throw new Error("File not found");
 			});
 
@@ -154,7 +158,9 @@ describe("SecureCredentialsManager - FIX 4", () => {
 			});
 
 			vi.mocked(readFile).mockImplementation(async () => {
-				if (storedData) return storedData;
+				if (storedData) {
+					return storedData;
+				}
 				throw new Error("File not found");
 			});
 
@@ -211,7 +217,7 @@ describe("SecureCredentialsManager - FIX 4", () => {
 
 			// Verify the stored data is not plain text JSON
 			expect(storage.data).not.toBeNull();
-			const storedString = storage.data!.toString("utf8");
+			const storedString = storage.data?.toString("utf8");
 
 			// Should NOT contain plain text token or email
 			expect(storedString).not.toContain("super_secret_token");

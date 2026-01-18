@@ -9,9 +9,9 @@
  * @module ui/prompts
  */
 
+import * as readline from "node:readline";
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
-import * as readline from "readline";
 
 // =============================================================================
 // TYPES
@@ -76,7 +76,9 @@ export async function confirm(options: ConfirmOptions): Promise<boolean> {
 		}
 
 		rl.question(prompt, (answer) => {
-			if (timeoutId) clearTimeout(timeoutId);
+			if (timeoutId) {
+				clearTimeout(timeoutId);
+			}
 			rl.close();
 
 			const trimmed = answer.trim().toLowerCase();
@@ -282,7 +284,7 @@ export async function input(
 		mask?: boolean;
 	},
 ): Promise<string> {
-	const { default: defaultValue, validate, mask } = options || {};
+	const { default: defaultValue, validate, mask: _mask } = options || {};
 
 	const defaultHint = defaultValue ? chalk.gray(` (${defaultValue})`) : "";
 	const prompt = `${chalk.cyan("?")} ${message}${defaultHint}: `;

@@ -150,11 +150,13 @@ export function renderSeverity(value: number, maxValue = 10): string {
  * ```
  */
 export function truncatePath(path: string, maxLength: number): string {
-	if (path.length <= maxLength) return path;
+	if (path.length <= maxLength) {
+		return path;
+	}
 
 	const parts = path.split("/");
 	if (parts.length <= 2) {
-		return "..." + path.slice(-(maxLength - 3));
+		return `...${path.slice(-(maxLength - 3))}`;
 	}
 
 	// Keep filename and first directory
@@ -162,7 +164,7 @@ export function truncatePath(path: string, maxLength: number): string {
 	const firstDir = parts[0];
 
 	if (filename.length + firstDir.length + 5 > maxLength) {
-		return "..." + filename.slice(-(maxLength - 3));
+		return `...${filename.slice(-(maxLength - 3))}`;
 	}
 
 	return `${firstDir}/.../${filename}`;
@@ -187,10 +189,18 @@ export function formatRelativeTime(date: Date): string {
 	const diffHours = Math.floor(diffMins / 60);
 	const diffDays = Math.floor(diffHours / 24);
 
-	if (diffMins < 1) return "just now";
-	if (diffMins < 60) return `${diffMins}m ago`;
-	if (diffHours < 24) return `${diffHours}h ago`;
-	if (diffDays < 7) return `${diffDays}d ago`;
+	if (diffMins < 1) {
+		return "just now";
+	}
+	if (diffMins < 60) {
+		return `${diffMins}m ago`;
+	}
+	if (diffHours < 24) {
+		return `${diffHours}h ago`;
+	}
+	if (diffDays < 7) {
+		return `${diffDays}d ago`;
+	}
 
 	return date.toLocaleDateString();
 }
@@ -305,7 +315,9 @@ export function createRiskSignalTable(signals: RiskSignal[]): string {
 
 	for (const signal of sorted) {
 		// Only show signals with value > 0
-		if (signal.value <= 0) continue;
+		if (signal.value <= 0) {
+			continue;
+		}
 
 		table.push([signal.signal, signal.value.toFixed(1), renderSeverity(signal.value)]);
 	}
@@ -623,8 +635,10 @@ function getTypeColor(type: string): typeof chalk.blue {
  * @internal
  */
 function truncateText(text: string, maxLength: number): string {
-	if (text.length <= maxLength) return text;
-	return text.slice(0, maxLength - 3) + "...";
+	if (text.length <= maxLength) {
+		return text;
+	}
+	return `${text.slice(0, maxLength - 3)}...`;
 }
 
 // =============================================================================

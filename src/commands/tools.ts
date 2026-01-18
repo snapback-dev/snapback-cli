@@ -9,11 +9,13 @@
  */
 
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { confirm, password } from "@inquirer/prompts";
 import {
 	type AIClientConfig,
 	detectAIClients,
+	detectWorkspaceConfig,
 	getSnapbackMCPConfig,
 	repairClientConfig,
 	type ValidationResult,
@@ -292,6 +294,14 @@ async function configureTool(
 }
 
 /**
+ * Check if a config path is global (not workspace-specific)
+ */
+function isGlobalConfig(configPath: string): boolean {
+	const home = homedir();
+	return configPath.includes(home) && !configPath.includes(process.cwd());
+}
+
+/**
  * Configure a specific AI client
  */
 async function configureClient(
@@ -305,13 +315,29 @@ async function configureClient(
 	const spinner = ora(`Configuring ${client.displayName}...`).start();
 
 	try {
+		// =========================================================================
+		// CONFLICT DETECTION: Check for workspace-specific configs
+		// =========================================================================
+		const workspaceRoot = workspaceOverride || findWorkspaceRoot(process.cwd());
+		const workspaceConfig = detectWorkspaceConfig(workspaceRoot);
+
+		// If workspace config exists and this is a global client config,
+		// skip to prevent conflicts (workspace takes precedence)
+		if (workspaceConfig && isGlobalConfig(client.configPath)) {
+			spinner.info(`${client.displayName} workspace config detected`);
+			console.log(chalk.gray(`  Workspace: ${workspaceConfig.path}`));
+			console.log(chalk.gray(`  Type: ${workspaceConfig.type}`));
+			console.log();
+			console.log(chalk.cyan("  Skipping global config to prevent conflicts"));
+			console.log(chalk.gray("  Workspace configurations take precedence over global"));
+			console.log();
+			return;
+		}
+
 		// Resolve workspace root for dev mode or npm mode
-		let workspaceRoot: string | undefined;
 		let localCliPath: string | undefined;
 
 		if (devMode) {
-			// Infer workspace from cwd or find repo root
-			workspaceRoot = workspaceOverride || findWorkspaceRoot(process.cwd());
 			// Find CLI dist path relative to workspace
 			localCliPath = findCliDistPath(workspaceRoot);
 
@@ -322,8 +348,6 @@ async function configureClient(
 
 			spinner.text = `Configuring ${client.displayName} (dev mode)...`;
 		} else if (npmMode) {
-			// npm mode also benefits from workspace path for the MCP server
-			workspaceRoot = workspaceOverride || findWorkspaceRoot(process.cwd());
 			spinner.text = `Configuring ${client.displayName} (npm/npx mode)...`;
 		}
 

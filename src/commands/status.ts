@@ -411,7 +411,9 @@ function displayStatus(status: WorkspaceStatus): void {
  * Format bytes to human readable
  */
 function formatBytes(bytes: number): string {
-	if (bytes === 0) return "0 KB";
+	if (bytes === 0) {
+		return "0 KB";
+	}
 
 	const units = ["B", "KB", "MB", "GB"];
 	const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);

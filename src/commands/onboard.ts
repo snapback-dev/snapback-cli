@@ -112,8 +112,8 @@ export function createOnboardCommand(): Command {
 				console.log(chalk.cyan.bold("Next Steps"));
 				console.log(chalk.gray("─".repeat(50)));
 				console.log("  1. Review and customize the generated context files");
-				console.log("  2. Run " + chalk.yellow("snap status") + " to check workspace health");
-				console.log("  3. Configure your AI tools with " + chalk.yellow("snap tools configure"));
+				console.log(`  2. Run ${chalk.yellow("snap status")} to check workspace health`);
+				console.log(`  3. Configure your AI tools with ${chalk.yellow("snap tools configure")}`);
 				console.log();
 
 				// Final message

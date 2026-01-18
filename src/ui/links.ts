@@ -28,41 +28,63 @@ export interface TerminalLinkOptions {
 export function supportsHyperlinks(): boolean {
 	// Check environment variables
 	const forceHyperlinks = process.env.FORCE_HYPERLINK;
-	if (forceHyperlinks === "0") return false;
-	if (forceHyperlinks === "1") return true;
+	if (forceHyperlinks === "0") {
+		return false;
+	}
+	if (forceHyperlinks === "1") {
+		return true;
+	}
 
 	// Check for known supported terminals
 	const { TERM_PROGRAM, VTE_VERSION, COLORTERM, CI } = process.env;
 
 	// CI environments typically don't support hyperlinks
-	if (CI) return false;
+	if (CI) {
+		return false;
+	}
 
 	// iTerm2 3.1+
-	if (TERM_PROGRAM === "iTerm.app") return true;
+	if (TERM_PROGRAM === "iTerm.app") {
+		return true;
+	}
 
 	// VTE-based terminals (GNOME Terminal, Tilix, etc.) version 0.50+
 	if (VTE_VERSION) {
 		const version = Number.parseInt(VTE_VERSION, 10);
-		if (version >= 5000) return true;
+		if (version >= 5000) {
+			return true;
+		}
 	}
 
 	// Windows Terminal
-	if (process.env.WT_SESSION) return true;
+	if (process.env.WT_SESSION) {
+		return true;
+	}
 
 	// VSCode integrated terminal
-	if (TERM_PROGRAM === "vscode") return true;
+	if (TERM_PROGRAM === "vscode") {
+		return true;
+	}
 
 	// Kitty
-	if (process.env.KITTY_WINDOW_ID) return true;
+	if (process.env.KITTY_WINDOW_ID) {
+		return true;
+	}
 
 	// Hyper
-	if (COLORTERM === "truecolor" && TERM_PROGRAM === "Hyper") return true;
+	if (COLORTERM === "truecolor" && TERM_PROGRAM === "Hyper") {
+		return true;
+	}
 
 	// Alacritty
-	if (TERM_PROGRAM === "Alacritty") return true;
+	if (TERM_PROGRAM === "Alacritty") {
+		return true;
+	}
 
 	// WezTerm
-	if (process.env.WEZTERM_PANE) return true;
+	if (process.env.WEZTERM_PANE) {
+		return true;
+	}
 
 	return false;
 }

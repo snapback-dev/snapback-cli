@@ -14,10 +14,10 @@
  * @module commands/wizard
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
-import * as fs from "fs";
-import * as path from "path";
 import { hyperlink } from "../ui/links";
 import { displayBrandedHeader } from "../ui/logo";
 import { prompts, status } from "../ui/prompts";
@@ -173,7 +173,7 @@ async function welcomeStep(): Promise<void> {
  * Step 2: Authentication
  */
 async function authenticationStep(state: WizardState): Promise<WizardState> {
-	console.log("\n" + chalk.cyan.bold("Step 1: Authentication\n"));
+	console.log(`\n${chalk.cyan.bold("Step 1: Authentication\n")}`);
 
 	if (state.authenticated) {
 		status.success("Already authenticated");
@@ -204,7 +204,7 @@ async function authenticationStep(state: WizardState): Promise<WizardState> {
 		console.log(chalk.gray("\n  Opening browser for authentication..."));
 		// In real implementation: open browser and wait for callback
 		console.log(
-			chalk.cyan("  → " + hyperlink.create("Click here to authenticate", "https://snapback.dev/auth/cli")),
+			chalk.cyan(`  → ${hyperlink.create("Click here to authenticate", "https://snapback.dev/auth/cli")}`),
 		);
 		console.log();
 
@@ -245,7 +245,7 @@ async function authenticationStep(state: WizardState): Promise<WizardState> {
  * Step 3: Workspace setup
  */
 async function workspaceStep(state: WizardState): Promise<WizardState> {
-	console.log("\n" + chalk.cyan.bold("Step 2: Workspace Setup\n"));
+	console.log(`\n${chalk.cyan.bold("Step 2: Workspace Setup\n")}`);
 
 	const cwd = process.cwd();
 
@@ -341,7 +341,7 @@ async function workspaceStep(state: WizardState): Promise<WizardState> {
  * Step 4: Protection level
  */
 async function protectionStep(state: WizardState): Promise<WizardState> {
-	console.log("\n" + chalk.cyan.bold("Step 3: Protection Level\n"));
+	console.log(`\n${chalk.cyan.bold("Step 3: Protection Level\n")}`);
 
 	console.log(chalk.white("  Choose how SnapBack should protect your code:\n"));
 
@@ -378,7 +378,7 @@ async function protectionStep(state: WizardState): Promise<WizardState> {
  * Step 5: AI tool integration
  */
 async function mcpStep(state: WizardState): Promise<WizardState> {
-	console.log("\n" + chalk.cyan.bold("Step 4: AI Tool Integration\n"));
+	console.log(`\n${chalk.cyan.bold("Step 4: AI Tool Integration\n")}`);
 
 	// Import mcp-config for detection and configuration
 	let detectAIClients: typeof import("@snapback/mcp-config").detectAIClients;
@@ -481,7 +481,7 @@ async function fileProtectionStep(state: WizardState): Promise<WizardState> {
 		return { ...state, filesProtected: false };
 	}
 
-	console.log("\n" + chalk.cyan.bold("Step 5: File Protection\n"));
+	console.log(`\n${chalk.cyan.bold("Step 5: File Protection\n")}`);
 
 	console.log(chalk.white("  Protect sensitive files from AI modifications:"));
 	console.log(chalk.gray("  • Environment files (.env, .env.*)"));
@@ -549,7 +549,7 @@ async function fileProtectionStep(state: WizardState): Promise<WizardState> {
 		}
 
 		return { ...state, filesProtected: true };
-	} catch (error) {
+	} catch (_error) {
 		status.warning("Could not set up file protection");
 		console.log(chalk.gray("  Run 'snap protect env' later to protect files"));
 		return { ...state, filesProtected: false };
@@ -564,7 +564,7 @@ async function gitHookStep(state: WizardState): Promise<WizardState> {
 		return { ...state, gitHookInstalled: false };
 	}
 
-	console.log("\n" + chalk.cyan.bold("Step 6: Git Integration\n"));
+	console.log(`\n${chalk.cyan.bold("Step 6: Git Integration\n")}`);
 
 	// Check if it's a git repo
 	const gitDir = path.join(state.workspaceRoot, ".git");
@@ -619,10 +619,10 @@ fi
 
 		if (existingContent) {
 			// Append to existing hook
-			fs.writeFileSync(hookPath, existingContent + "\n" + snapbackHook);
+			fs.writeFileSync(hookPath, `${existingContent}\n${snapbackHook}`);
 		} else {
 			// Create new hook
-			fs.writeFileSync(hookPath, "#!/bin/sh\n" + snapbackHook);
+			fs.writeFileSync(hookPath, `#!/bin/sh\n${snapbackHook}`);
 		}
 
 		// Make executable
@@ -630,7 +630,7 @@ fi
 
 		status.success("Pre-commit hook installed");
 		return { ...state, gitHookInstalled: true };
-	} catch (error) {
+	} catch (_error) {
 		status.warning("Could not install Git hook");
 		console.log(chalk.gray("  You can add 'snap check' to your hooks manually"));
 		return { ...state, gitHookInstalled: false };
@@ -645,7 +645,7 @@ async function snapshotStep(state: WizardState): Promise<WizardState> {
 		return { ...state, snapshotCreated: false };
 	}
 
-	console.log("\n" + chalk.cyan.bold("Step 7: Initial Snapshot\n"));
+	console.log(`\n${chalk.cyan.bold("Step 7: Initial Snapshot\n")}`);
 
 	console.log(chalk.white("  Create a safety snapshot of your protected files:"));
 	console.log(chalk.gray("  • Captures current state of critical files"));
@@ -680,7 +680,7 @@ async function snapshotStep(state: WizardState): Promise<WizardState> {
 		status.success("Initial snapshot created");
 		console.log(chalk.gray("  Use 'snap snapshot list' to view snapshots"));
 		return { ...state, snapshotCreated: true };
-	} catch (error) {
+	} catch (_error) {
 		status.warning("Could not create snapshot");
 		console.log(chalk.gray("  Run 'snap snapshot create' to create manually"));
 		return { ...state, snapshotCreated: false };
@@ -691,7 +691,7 @@ async function snapshotStep(state: WizardState): Promise<WizardState> {
  * Step 9: Analytics opt-in
  */
 async function analyticsStep(state: WizardState): Promise<WizardState> {
-	console.log("\n" + chalk.cyan.bold("Step 8: Usage Analytics\n"));
+	console.log(`\n${chalk.cyan.bold("Step 8: Usage Analytics\n")}`);
 
 	console.log(chalk.white("  Help us improve SnapBack by sharing anonymous usage data:"));
 	console.log(chalk.gray("  • Command usage frequency"));
@@ -716,62 +716,62 @@ async function analyticsStep(state: WizardState): Promise<WizardState> {
  * Final step: Summary and next steps
  */
 async function summaryStep(state: WizardState): Promise<void> {
-	console.log("\n" + chalk.green.bold("Setup Complete! 🎉\n"));
+	console.log(`\n${chalk.green.bold("Setup Complete! 🎉\n")}`);
 
 	console.log(chalk.white("Configuration Summary:"));
 	console.log(chalk.gray("─".repeat(40)));
 
 	// Authentication
 	if (state.authenticated) {
-		console.log(chalk.green("  ✓ ") + "Authenticated");
+		console.log(`${chalk.green("  ✓ ")}Authenticated`);
 	} else {
-		console.log(chalk.yellow("  ! ") + "Not authenticated (limited features)");
+		console.log(`${chalk.yellow("  ! ")}Not authenticated (limited features)`);
 	}
 
 	// Workspace
 	if (state.workspaceRoot) {
-		console.log(chalk.green("  ✓ ") + `Workspace: ${path.basename(state.workspaceRoot)}`);
+		console.log(`${chalk.green("  ✓ ")}Workspace: ${path.basename(state.workspaceRoot)}`);
 	} else {
-		console.log(chalk.yellow("  ! ") + "No workspace configured");
+		console.log(`${chalk.yellow("  ! ")}No workspace configured`);
 	}
 
 	// Project type
 	if (state.projectType && state.projectType !== "unknown") {
-		console.log(chalk.green("  ✓ ") + `Project type: ${state.projectType}`);
+		console.log(`${chalk.green("  ✓ ")}Project type: ${state.projectType}`);
 	}
 
 	// Protection level
-	console.log(chalk.green("  ✓ ") + `Protection: ${state.protectionLevel}`);
+	console.log(`${chalk.green("  ✓ ")}Protection: ${state.protectionLevel}`);
 
 	// MCP
 	if (state.mcpEnabled) {
-		console.log(chalk.green("  ✓ ") + "MCP integration enabled");
+		console.log(`${chalk.green("  ✓ ")}MCP integration enabled`);
 	}
 
 	// File protection
 	if (state.filesProtected) {
-		console.log(chalk.green("  ✓ ") + "Critical files protected");
+		console.log(`${chalk.green("  ✓ ")}Critical files protected`);
 	}
 
 	// Git hook
 	if (state.gitHookInstalled) {
-		console.log(chalk.green("  ✓ ") + "Pre-commit hook installed");
+		console.log(`${chalk.green("  ✓ ")}Pre-commit hook installed`);
 	}
 
 	// Initial snapshot
 	if (state.snapshotCreated) {
-		console.log(chalk.green("  ✓ ") + "Initial snapshot created");
+		console.log(`${chalk.green("  ✓ ")}Initial snapshot created`);
 	}
 
 	// Analytics
 	if (state.analyticsEnabled) {
-		console.log(chalk.green("  ✓ ") + "Anonymous analytics enabled");
+		console.log(`${chalk.green("  ✓ ")}Anonymous analytics enabled`);
 	}
 
 	console.log(chalk.gray("─".repeat(40)));
 
 	// Run quick doctor check
-	console.log("\n" + chalk.cyan.bold("Quick Health Check:\n"));
+	console.log(`\n${chalk.cyan.bold("Quick Health Check:\n")}`);
 	try {
 		const { detectAIClients } = await import("@snapback/mcp-config");
 		const detection = detectAIClients({ cwd: state.workspaceRoot || process.cwd() });
@@ -779,10 +779,10 @@ async function summaryStep(state: WizardState): Promise<void> {
 		const needsSetup = detection.needsSetup;
 
 		if (configured.length > 0) {
-			console.log(chalk.green("  ✓ ") + `${configured.length} AI tool(s) ready`);
+			console.log(`${chalk.green("  ✓ ")}${configured.length} AI tool(s) ready`);
 		}
 		if (needsSetup.length > 0) {
-			console.log(chalk.yellow("  ! ") + `${needsSetup.length} tool(s) need MCP config`);
+			console.log(`${chalk.yellow("  ! ")}${needsSetup.length} tool(s) need MCP config`);
 		}
 	} catch {
 		// Ignore if can't run doctor check
@@ -805,7 +805,7 @@ async function summaryStep(state: WizardState): Promise<void> {
 	}
 
 	// Next steps - smarter based on what's already done
-	console.log("\n" + chalk.cyan.bold("Next Steps:\n"));
+	console.log(`\n${chalk.cyan.bold("Next Steps:\n")}`);
 
 	let stepNum = 1;
 
@@ -828,7 +828,7 @@ async function summaryStep(state: WizardState): Promise<void> {
 	// Upgrade prompt for free tier
 	if (!state.authenticated) {
 		console.log(chalk.gray("─".repeat(40)));
-		console.log("\n" + chalk.yellow.bold("Upgrade to Pro:\n"));
+		console.log(`\n${chalk.yellow.bold("Upgrade to Pro:\n")}`);
 		console.log(chalk.white("  • Unlimited snapshots"));
 		console.log(chalk.white("  • Team collaboration"));
 		console.log(chalk.white("  • Priority support"));
@@ -850,9 +850,11 @@ async function summaryStep(state: WizardState): Promise<void> {
  * Step 9: Start First Session
  */
 async function sessionStep(state: WizardState): Promise<void> {
-	if (!state.workspaceRoot) return;
+	if (!state.workspaceRoot) {
+		return;
+	}
 
-	console.log("\n" + chalk.cyan.bold("Final Step: Start Your First Session\n"));
+	console.log(`\n${chalk.cyan.bold("Final Step: Start Your First Session\n")}`);
 
 	console.log(chalk.white("  Sessions help SnapBack track your current task:"));
 	console.log(chalk.gray("  • Groups snapshots by objective"));
@@ -878,7 +880,7 @@ async function sessionStep(state: WizardState): Promise<void> {
 
 			await saveCurrentSession(newSession, state.workspaceRoot);
 			status.success("Session started! You're ready to code.");
-		} catch (error) {
+		} catch (_error) {
 			status.warning("Could not start session");
 		}
 	} else {

@@ -256,7 +256,9 @@ class SecureCredentialsManager {
 	 * Selects the best available provider
 	 */
 	async initialize(): Promise<void> {
-		if (this.initialized) return;
+		if (this.initialized) {
+			return;
+		}
 
 		// Try keytar first (OS keychain)
 		const keytarProvider = await createKeytarProvider();
@@ -283,7 +285,9 @@ class SecureCredentialsManager {
 	 */
 	async getCredentials(): Promise<GlobalCredentials | null> {
 		await this.initialize();
-		if (!this.provider) return null;
+		if (!this.provider) {
+			return null;
+		}
 
 		const stored = await this.provider.getPassword(SERVICE_NAME, ACCOUNT_NAME);
 		if (!stored) {
@@ -339,7 +343,9 @@ class SecureCredentialsManager {
 	 */
 	async clearCredentials(): Promise<void> {
 		await this.initialize();
-		if (!this.provider) return;
+		if (!this.provider) {
+			return;
+		}
 
 		await this.provider.deletePassword(SERVICE_NAME, ACCOUNT_NAME);
 
@@ -361,7 +367,9 @@ class SecureCredentialsManager {
 	 */
 	async isLoggedIn(): Promise<boolean> {
 		const credentials = await this.getCredentials();
-		if (!credentials?.accessToken) return false;
+		if (!credentials?.accessToken) {
+			return false;
+		}
 
 		// Check if token is expired
 		if (credentials.expiresAt) {

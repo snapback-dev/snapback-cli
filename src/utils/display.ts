@@ -238,7 +238,7 @@ export function displayBox(
 export function displaySaveStory(riskScore: number, affectedFiles: string[], snapshotId: string): string {
 	return displayBox(
 		`${chalk.bold("🛡️ SnapBack just protected you!")}\n\n` +
-			`${chalk.cyan("Risk Score:")} ${chalk.red(riskScore.toFixed(1) + "/10")}\n` +
+			`${chalk.cyan("Risk Score:")} ${chalk.red(`${riskScore.toFixed(1)}/10`)}\n` +
 			`${chalk.cyan("Files Protected:")} ${chalk.green(affectedFiles.length.toString())}\n` +
 			`${chalk.cyan("Snapshot:")} ${snapshotId.substring(0, 8)}\n\n` +
 			chalk.dim("Share your save story: snapback.dev/stories"),
@@ -292,7 +292,7 @@ export function displayHighRiskWarning(file: string, riskScore: number): string 
 	return displayBox(
 		`${chalk.red("⚠ High Risk Detected")}\n\n` +
 			`${chalk.cyan("File:")} ${file}\n` +
-			`${chalk.cyan("Risk Score:")} ${chalk.red(riskScore.toFixed(1) + "/10")}\n\n` +
+			`${chalk.cyan("Risk Score:")} ${chalk.red(`${riskScore.toFixed(1)}/10`)}\n\n` +
 			`${chalk.yellow("Recommendation:")} Create a snapshot before proceeding`,
 		{
 			title: "🚨 Risk Analysis",

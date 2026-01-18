@@ -172,8 +172,12 @@ function compareVersions(a: string, b: string): number {
 		const partA = partsA[i] || 0;
 		const partB = partsB[i] || 0;
 
-		if (partA > partB) return 1;
-		if (partA < partB) return -1;
+		if (partA > partB) {
+			return 1;
+		}
+		if (partA < partB) {
+			return -1;
+		}
 	}
 
 	return 0;
@@ -216,7 +220,7 @@ async function performUpgrade(canary = false): Promise<void> {
 		const { stderr } = await execAsync(command);
 
 		// Check for errors in stderr (npm sometimes outputs warnings there)
-		if (stderr && stderr.includes("ERR!")) {
+		if (stderr?.includes("ERR!")) {
 			throw new Error(stderr);
 		}
 

@@ -76,10 +76,8 @@ export interface WorkspaceState {
  */
 export class ContextWriter {
 	private ctxPath: string;
-	private workspaceRoot: string;
 
 	constructor(workspaceRoot: string) {
-		this.workspaceRoot = workspaceRoot;
 		this.ctxPath = join(workspaceRoot, ".snapback", "ctx");
 	}
 
@@ -147,7 +145,9 @@ export class ContextWriter {
 	 * Compress string for wire format
 	 */
 	private compress(s: string, max: number): string {
-		if (s.length <= max) return s;
+		if (s.length <= max) {
+			return s;
+		}
 		return `${s.slice(0, max - 1)}…`;
 	}
 

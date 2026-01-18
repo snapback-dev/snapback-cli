@@ -350,7 +350,9 @@ export class SnapbackWatcher extends EventEmitter {
 	}
 
 	private async flushSignals(): Promise<void> {
-		if (this.signalBuffer.length === 0) return;
+		if (this.signalBuffer.length === 0) {
+			return;
+		}
 
 		const signals = [...this.signalBuffer];
 		this.signalBuffer = [];
@@ -362,7 +364,9 @@ export class SnapbackWatcher extends EventEmitter {
 	}
 
 	private getWatchedCount(): number {
-		if (!this.watcher) return 0;
+		if (!this.watcher) {
+			return 0;
+		}
 		const watched = this.watcher.getWatched();
 		return Object.values(watched).reduce((acc, files) => acc + files.length, 0);
 	}
@@ -407,7 +411,9 @@ export async function getBehavioralSignals(workspaceRoot?: string): Promise<Beha
 export async function analyzeBehavioralSignals(workspaceRoot?: string): Promise<LearningEntry[]> {
 	const signals = await getBehavioralSignals(workspaceRoot);
 
-	if (signals.length === 0) return [];
+	if (signals.length === 0) {
+		return [];
+	}
 
 	// Count changes by file
 	const fileCounts = new Map<string, number>();

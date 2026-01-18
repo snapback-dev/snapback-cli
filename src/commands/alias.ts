@@ -7,11 +7,11 @@
  * @module commands/alias
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import boxen from "boxen";
 import chalk from "chalk";
 import { Command } from "commander";
-import * as fs from "fs";
-import * as path from "path";
 
 // =============================================================================
 // TYPES
@@ -147,12 +147,16 @@ function listAliases(): void {
  * Expand an alias if it exists
  */
 export function expandAlias(args: string[]): string[] {
-	if (args.length === 0) return args;
+	if (args.length === 0) {
+		return args;
+	}
 
 	const config = loadAliases();
 	const alias = config.aliases[args[0]];
 
-	if (!alias) return args;
+	if (!alias) {
+		return args;
+	}
 
 	// Parse the alias command and append any additional args
 	const aliasArgs = alias.command.split(/\s+/);

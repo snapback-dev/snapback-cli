@@ -406,7 +406,9 @@ function findErrorSuggestion(message: string): Partial<SmartError> {
  * Extract error code from error object
  */
 function extractErrorCode(error: Error & { code?: string }): string | undefined {
-	if (error.code) return error.code;
+	if (error.code) {
+		return error.code;
+	}
 
 	// Extract from error name
 	if (error.name && error.name !== "Error") {

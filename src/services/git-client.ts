@@ -182,8 +182,12 @@ export class GitClient {
 
 		for (const line of stdout.split(/\r?\n/).filter(Boolean)) {
 			const [add, del] = line.split("\t");
-			if (add !== "-") additions += Number.parseInt(add, 10);
-			if (del !== "-") deletions += Number.parseInt(del, 10);
+			if (add !== "-") {
+				additions += Number.parseInt(add, 10);
+			}
+			if (del !== "-") {
+				deletions += Number.parseInt(del, 10);
+			}
 			files++;
 		}
 

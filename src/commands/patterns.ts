@@ -23,7 +23,7 @@ import {
 } from "../services/snapback-dir";
 import { formatDate } from "../utils";
 
-const execAsync = promisify(exec);
+const _execAsync = promisify(exec);
 
 // =============================================================================
 // TYPES
@@ -326,7 +326,9 @@ export function createPatternsCommand(): Command {
 				// Details if verbose
 				if (options.verbose) {
 					for (const [type, items] of Object.entries(grouped)) {
-						if (items.length === 0) continue;
+						if (items.length === 0) {
+							continue;
+						}
 
 						const color =
 							type === "FIXME"
@@ -354,7 +356,7 @@ export function createPatternsCommand(): Command {
 						console.log(chalk.bold("High Priority Items:"));
 						for (const item of highPriority) {
 							const color = item.type === "FIXME" ? chalk.red : chalk.yellow;
-							console.log(`  ${color(item.type)} ${chalk.gray(item.file + ":" + item.line)}`);
+							console.log(`  ${color(item.type)} ${chalk.gray(`${item.file}:${item.line}`)}`);
 							console.log(`    ${item.text.substring(0, 70)}${item.text.length > 70 ? "..." : ""}`);
 						}
 						console.log();

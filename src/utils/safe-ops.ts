@@ -9,9 +9,9 @@
  * @module utils/safe-ops
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import chalk from "chalk";
-import * as fs from "fs";
-import * as path from "path";
 import { confirm, confirmDangerous, type DryRunChange, dryRunPreview } from "../ui/prompts";
 
 // =============================================================================
@@ -299,7 +299,7 @@ export async function undoLastOperation(): Promise<boolean> {
 					}
 					break;
 			}
-		} catch (error) {
+		} catch (_error) {
 			console.log(chalk.red(`  ✗ Failed to undo ${change.path}`));
 			success = false;
 		}

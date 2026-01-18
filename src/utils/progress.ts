@@ -49,7 +49,9 @@ export class ProgressTracker {
 	 * Start the progress tracker
 	 */
 	start(): void {
-		if (this.quiet) return;
+		if (this.quiet) {
+			return;
+		}
 
 		if (this.isTTY) {
 			this.spinner = ora({
@@ -68,7 +70,9 @@ export class ProgressTracker {
 	update(currentItem: string): void {
 		this.current++;
 
-		if (this.quiet) return;
+		if (this.quiet) {
+			return;
+		}
 
 		const progressText = this.formatProgress(currentItem);
 
@@ -86,7 +90,9 @@ export class ProgressTracker {
 	 * Complete the progress with final message
 	 */
 	complete(message: string): void {
-		if (this.quiet) return;
+		if (this.quiet) {
+			return;
+		}
 
 		if (this.isTTY && this.spinner) {
 			this.spinner.succeed(message);
@@ -111,7 +117,9 @@ export class ProgressTracker {
 	 */
 	getElapsed(): string {
 		const elapsed = Date.now() - this.startTime;
-		if (elapsed < 1000) return `${elapsed}ms`;
+		if (elapsed < 1000) {
+			return `${elapsed}ms`;
+		}
 		return `${(elapsed / 1000).toFixed(1)}s`;
 	}
 
@@ -139,8 +147,10 @@ export class ProgressTracker {
 	}
 
 	private truncateItem(item: string, maxLength: number): string {
-		if (item.length <= maxLength) return item;
-		return "..." + item.slice(-(maxLength - 3));
+		if (item.length <= maxLength) {
+			return item;
+		}
+		return `...${item.slice(-(maxLength - 3))}`;
 	}
 }
 
@@ -212,7 +222,7 @@ export function renderProgressBar(current: number, total: number, width = 30): s
  */
 export function formatProgressLine(current: number, total: number, item: string): string {
 	const counter = chalk.cyan(`[${current}/${total}]`);
-	const truncatedItem = item.length > 50 ? "..." + item.slice(-47) : item;
+	const truncatedItem = item.length > 50 ? `...${item.slice(-47)}` : item;
 	return `${counter} ${chalk.gray(truncatedItem)}`;
 }
 
@@ -223,8 +233,12 @@ export function formatProgressLine(current: number, total: number, item: string)
  * @returns Formatted duration string
  */
 export function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+	if (ms < 1000) {
+		return `${ms}ms`;
+	}
+	if (ms < 60000) {
+		return `${(ms / 1000).toFixed(1)}s`;
+	}
 	const minutes = Math.floor(ms / 60000);
 	const seconds = Math.round((ms % 60000) / 1000);
 	return `${minutes}m ${seconds}s`;

@@ -242,8 +242,12 @@ export class AlertQueue {
 		// Filter to undelivered, unexpired alerts
 		const now = Date.now();
 		const pending = Array.from(this.pendingAlerts.values()).filter((entry) => {
-			if (entry.delivered) return false;
-			if (entry.expires_at && entry.expires_at < now) return false;
+			if (entry.delivered) {
+				return false;
+			}
+			if (entry.expires_at && entry.expires_at < now) {
+				return false;
+			}
 			return true;
 		});
 
@@ -251,7 +255,9 @@ export class AlertQueue {
 		const severityOrder: Record<AlertSeverity, number> = { critical: 0, warning: 1, info: 2 };
 		pending.sort((a, b) => {
 			const severityDiff = severityOrder[a.severity] - severityOrder[b.severity];
-			if (severityDiff !== 0) return severityDiff;
+			if (severityDiff !== 0) {
+				return severityDiff;
+			}
 			return b.timestamp - a.timestamp;
 		});
 
@@ -402,7 +408,7 @@ export class AlertQueue {
 	// Private: Rate Limiting
 	// =========================================================================
 
-	private passesRateLimit(alert: ProactiveAlert): boolean {
+	private passesRateLimit(_alert: ProactiveAlert): boolean {
 		const now = Date.now();
 
 		// Check max per session
@@ -509,7 +515,7 @@ export class AlertQueue {
 	}
 
 	private appendToFile(path: string, entry: AlertQueueEntry): void {
-		const line = JSON.stringify(entry) + "\n";
+		const line = `${JSON.stringify(entry)}\n`;
 		appendFileSync(path, line, "utf-8");
 	}
 
@@ -524,7 +530,7 @@ export class AlertQueue {
 		// Rewrite alerts file without delivered alerts
 		const remaining = Array.from(this.pendingAlerts.values()).filter((e) => !e.delivered);
 
-		writeFileSync(this.alertsPath, remaining.map((e) => JSON.stringify(e)).join("\n") + "\n", "utf-8");
+		writeFileSync(this.alertsPath, `${remaining.map((e) => JSON.stringify(e)).join("\n")}\n`, "utf-8");
 	}
 }
 

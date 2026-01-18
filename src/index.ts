@@ -40,6 +40,8 @@ import {
 	createWizardCommand,
 	// MCP Server
 	mcpCommand,
+	// Daemon
+	registerDaemonCommands,
 	runWizard,
 } from "./commands";
 // CLI-UX-002: Git Client for staged files
@@ -153,6 +155,13 @@ export function createCLI() {
 
 	// Command aliases
 	program.addCommand(createAliasCommand());
+
+	// =========================================================================
+	// DAEMON COMMANDS
+	// =========================================================================
+
+	// Register daemon lifecycle commands (start, stop, status, restart, ping)
+	registerDaemonCommands(program);
 
 	// =========================================================================
 	// ALIAS EXPANSION
@@ -352,7 +361,7 @@ export function createCLI() {
 					console.log(chalk.cyan("Running build check..."));
 					execSync("pnpm build", { cwd, stdio: "inherit" });
 					console.log(chalk.green("✓ Build passed"));
-				} catch (error) {
+				} catch (_error) {
 					console.error(chalk.red("✗ Build failed"));
 					process.exit(1);
 				}
@@ -362,7 +371,7 @@ export function createCLI() {
 			if (mode === "architecture" || mode === "learnings" || mode === "circular" || mode === "docs") {
 				// These modes are best handled by MCP check tool
 				console.log(chalk.yellow(`Check mode "${mode}" is available via MCP tools.`));
-				console.log(chalk.gray("In your AI client, use: check(mode: \"" + mode + "\")"));
+				console.log(chalk.gray(`In your AI client, use: check(mode: "${mode}")`));
 				console.log(chalk.gray("\nSupported CLI modes: quick, build"));
 				return;
 			}

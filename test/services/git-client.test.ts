@@ -167,7 +167,7 @@ describe("GitClient", () => {
 				stdout: "+specific change",
 			});
 
-			const diff = await client.getStagedDiff("src/file.ts");
+			const _diff = await client.getStagedDiff("src/file.ts");
 
 			expect(mockedExeca).toHaveBeenCalledWith(
 				"git",

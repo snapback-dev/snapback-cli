@@ -158,7 +158,7 @@ export function renderRecommendations(recommendations: OnboardingRecommendation[
 		const rec = recommendations[i];
 		const icon = rec.category === "context" ? "📝" : rec.category === "security" ? "🔒" : "💡";
 
-		console.log(`${icon} ${chalk.white.bold(rec.title)}` + chalk.gray(` (${rec.estimatedTime})`));
+		console.log(`${icon} ${chalk.white.bold(rec.title)}${chalk.gray(` (${rec.estimatedTime})`)}`);
 		console.log(chalk.gray(`   ${rec.description}`));
 	}
 
