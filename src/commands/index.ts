@@ -66,6 +66,22 @@ export { createInitCommand } from "./init";
 export { createStatusCommand } from "./status";
 
 // =============================================================================
+// SHELL COMPLETIONS
+// =============================================================================
+
+/**
+ * Completion command - Generate shell completion scripts
+ *
+ * @example
+ * ```bash
+ * snap completion bash
+ * snap completion zsh
+ * snap completion fish
+ * ```
+ */
+export { createCompletionCommand } from "./completion";
+
+// =============================================================================
 // INTELLIGENCE COMMANDS (CLI-UX-005)
 // =============================================================================
 // These commands integrate @snapback/intelligence into the CLI.

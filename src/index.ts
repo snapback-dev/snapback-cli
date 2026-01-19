@@ -1,16 +1,44 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { checkbox, confirm, input, search } from "@inquirer/prompts";
 import type { Snapshot, SnapshotStorage } from "@snapback/contracts";
 import { createSnapshotStorage } from "@snapback/contracts/types/snapshot";
 import { CLIEngineAdapter } from "@snapback/engine/transports/cli";
 import chalk from "chalk";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import ora from "ora";
+
+// =============================================================================
+// VERSION & METADATA
+// =============================================================================
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+async function getPackageVersion(): Promise<string> {
+	try {
+		const pkgPath = join(__dirname, "../package.json");
+		const pkg = JSON.parse(await readFile(pkgPath, "utf-8"));
+		return pkg.version;
+	} catch {
+		return "0.0.0";
+	}
+}
+
+// Global state for CLI options
+export const cliState = {
+	verbose: false,
+	quiet: false,
+	debug: false,
+	noColor: false,
+};
+
 // New CLI commands
 import {
 	// Polish commands (Phase 6)
 	createAliasCommand,
+	// Shell completions
+	createCompletionCommand,
 	createConfigCommand,
 	// Intelligence (CLI-UX-005)
 	createContextCommand,
@@ -92,9 +120,68 @@ async function getAllFiles(dir: string, baseDir: string = dir): Promise<string[]
 	return files;
 }
 
-export function createCLI() {
+export async function createCLI() {
 	const program = new Command();
-	program.name("snapback").description("AI-safe code snapshots and risk analysis").alias("snap");
+	const version = await getPackageVersion();
+
+	program
+		.name("snapback")
+		.description("AI-safe code snapshots and risk analysis")
+		.alias("snap")
+		.version(version, "-v, --version", "Display version number")
+		.helpOption("-h, --help", "Display help for command")
+		.addOption(new Option("--verbose", "Enable verbose output").env("SNAPBACK_VERBOSE").default(false))
+		.addOption(new Option("-q, --quiet", "Suppress non-essential output").default(false))
+		.addOption(new Option("--no-color", "Disable colored output").env("NO_COLOR").default(false))
+		.addOption(
+			new Option("--debug", "Enable debug mode with detailed logging").env("SNAPBACK_DEBUG").default(false),
+		)
+		.hook("preAction", (thisCommand) => {
+			const opts = thisCommand.opts();
+			cliState.verbose = opts.verbose || false;
+			cliState.quiet = opts.quiet || false;
+			cliState.debug = opts.debug || false;
+			cliState.noColor = opts.color === false;
+
+			// Disable chalk colors if --no-color is set
+			if (cliState.noColor) {
+				chalk.level = 0;
+			}
+
+			// Debug mode implies verbose
+			if (cliState.debug) {
+				cliState.verbose = true;
+			}
+		})
+		.addHelpText(
+			"after",
+			`
+Examples:
+  $ snap init                    Initialize SnapBack in current directory
+  $ snap status                  Show workspace health and status
+  $ snap check                   Check staged files for risky changes
+  $ snap snapshot -m "backup"    Create a named snapshot
+  $ snap doctor                  Run diagnostic checks
+
+Environment Variables:
+  SNAPBACK_VERBOSE    Enable verbose output (same as --verbose)
+  SNAPBACK_DEBUG      Enable debug mode (same as --debug)
+  SNAPBACK_API_URL    Override API endpoint (default: https://api.snapback.dev)
+  NO_COLOR            Disable colored output (same as --no-color)
+
+Configuration:
+  Global config:    ~/.snapback/config.json
+  Workspace config: .snapback/config.json
+
+Documentation:
+  https://docs.snapback.dev
+  https://github.com/snapback-dev/snapback-cli
+`,
+		)
+		.configureHelp({
+			sortSubcommands: true,
+			sortOptions: true,
+		});
 
 	// =========================================================================
 	// NEW COMMANDS - Customer MCP System
@@ -155,6 +242,9 @@ export function createCLI() {
 
 	// Command aliases
 	program.addCommand(createAliasCommand());
+
+	// Shell completion scripts
+	program.addCommand(createCompletionCommand());
 
 	// =========================================================================
 	// DAEMON COMMANDS
@@ -757,10 +847,9 @@ if (import.meta.url === new URL(process.argv[1], `file://${process.platform === 
 		}
 
 		// Otherwise, proceed with normal CLI parsing
-		const program = createCLI();
+		const program = await createCLI();
 		await program.parseAsync(process.argv);
 	})();
 }
 
-// Export the program for testing
-export const program = createCLI();
+// createCLI is already exported above as an async function
