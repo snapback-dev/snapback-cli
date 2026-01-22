@@ -25,7 +25,7 @@ import { platform } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core-runtime";
 import { Intelligence } from "@snapback/intelligence";
-import { LocalStorage, SnapshotManager } from "@snapback/sdk";
+import { LocalStorage, ProtectionManager, SnapshotManager } from "@snapback/sdk";
 
 import {
 	DEFAULT_HEALTH_PORT,
@@ -195,6 +195,34 @@ function getSnapshotManager(workspaceRoot: string): SnapshotManager {
 		snapshotManagerInstances.set(workspaceRoot, manager);
 	}
 	return snapshotManagerInstances.get(workspaceRoot)!;
+}
+
+// =============================================================================
+// PROTECTION MANAGER SINGLETON (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+// =============================================================================
+
+/**
+ * ProtectionManager instances per workspace (singleton pattern for SDK integration)
+ * Per ARCHITECTURE_REFACTOR_SPEC.md Sprint 1: Add protection methods to daemon protocol
+ */
+const protectionManagerInstances = new Map<string, ProtectionManager>();
+
+/**
+ * Get or create ProtectionManager instance for a workspace.
+ * Per ARCHITECTURE_REFACTOR_SPEC.md Sprint 1: Enable protection delegation through daemon.
+ */
+function getProtectionManager(workspaceRoot: string): ProtectionManager {
+	if (!protectionManagerInstances.has(workspaceRoot)) {
+		// Create ProtectionManager with default config
+		const manager = new ProtectionManager({
+			patterns: [],
+			defaultLevel: "watch",
+			enabled: true,
+			autoProtectConfigs: true,
+		});
+		protectionManagerInstances.set(workspaceRoot, manager);
+	}
+	return protectionManagerInstances.get(workspaceRoot)!;
 }
 
 // =============================================================================
@@ -865,6 +893,16 @@ export class SnapBackDaemon extends EventEmitter {
 
 			case "file.modified":
 				return this.handleFileModifiedNotification(params, requestId);
+
+			// Protection methods (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+			case "protection.getLevel":
+				return this.handleProtectionGetLevel(params, requestId);
+
+			case "protection.setLevel":
+				return this.handleProtectionSetLevel(params, requestId);
+
+			case "protection.list":
+				return this.handleProtectionList(params, requestId);
 
 			default:
 				throw new MethodNotFoundError(method);
@@ -2136,5 +2174,150 @@ export class SnapBackDaemon extends EventEmitter {
 			hash = hash & hash;
 		}
 		return Math.abs(hash).toString(36);
+	}
+
+	// =========================================================================
+	// PROTECTION METHODS (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+	// =========================================================================
+
+	/**
+	 * Handle protection.getLevel - get protection level for a file
+	 */
+	private async handleProtectionGetLevel(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ level: string | null; reason?: string; pattern?: string }> {
+		const { workspace, filePath } = params as {
+			workspace: string;
+			filePath: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!filePath || typeof filePath !== "string") {
+			throw new InvalidParamsError("filePath is required");
+		}
+
+		// Validate path is within workspace
+		validatePath(workspace, filePath);
+
+		const protectionManager = getProtectionManager(workspace);
+		const protection = protectionManager.getProtection(filePath);
+
+		if (!protection) {
+			return { level: null };
+		}
+
+		return {
+			level: protection.level,
+			reason: protection.reason,
+			pattern: protection.pattern,
+		};
+	}
+
+	/**
+	 * Handle protection.setLevel - set protection level for a file
+	 */
+	private async handleProtectionSetLevel(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ success: boolean; previousLevel?: string }> {
+		const { workspace, filePath, level, reason } = params as {
+			workspace: string;
+			filePath: string;
+			level: "watch" | "warn" | "block";
+			reason?: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!filePath || typeof filePath !== "string") {
+			throw new InvalidParamsError("filePath is required");
+		}
+		if (!level || !["watch", "warn", "block"].includes(level)) {
+			throw new InvalidParamsError("level must be 'watch', 'warn', or 'block'");
+		}
+
+		// Validate path is within workspace
+		validatePath(workspace, filePath);
+
+		const protectionManager = getProtectionManager(workspace);
+
+		// Get previous level if exists
+		const existing = protectionManager.getProtection(filePath);
+		const previousLevel = existing?.level;
+
+		// Set new level
+		if (existing) {
+			protectionManager.updateLevel(filePath, level);
+		} else {
+			protectionManager.protect(filePath, level, reason);
+		}
+
+		this.logger.debug("Protection level set", {
+			workspace,
+			filePath,
+			level,
+			previousLevel,
+		});
+
+		return {
+			success: true,
+			previousLevel,
+		};
+	}
+
+	/**
+	 * Handle protection.list - list all protected files in a workspace
+	 */
+	private async handleProtectionList(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{
+		files: Array<{
+			path: string;
+			level: string;
+			pattern?: string;
+			reason?: string;
+			protectedAt?: string;
+		}>;
+		total: number;
+	}> {
+		const { workspace, level, limit } = params as {
+			workspace: string;
+			level?: "watch" | "warn" | "block";
+			limit?: number;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		const protectionManager = getProtectionManager(workspace);
+		let files = protectionManager.listProtected();
+
+		// Filter by level if specified
+		if (level) {
+			files = files.filter((f) => f.level === level);
+		}
+
+		// Map to response format
+		const mappedFiles = files.map((f) => ({
+			path: f.path,
+			level: f.level,
+			pattern: f.pattern,
+			reason: f.reason,
+			protectedAt: f.addedAt?.toISOString(),
+		}));
+
+		// Apply limit if specified
+		const result = limit ? mappedFiles.slice(0, limit) : mappedFiles;
+
+		return {
+			files: result,
+			total: files.length,
+		};
 	}
 }
