@@ -908,6 +908,9 @@ export class SnapBackDaemon extends EventEmitter {
 			case "learning.search":
 				return this.handleLearningSearch(params, requestId);
 
+			case "learning.list":
+				return this.handleLearningList(params, requestId);
+
 			case "context.get":
 				return this.handleContextGet(params, requestId);
 
@@ -1637,7 +1640,11 @@ export class SnapBackDaemon extends EventEmitter {
 		params: Record<string, unknown>,
 		_requestId: string,
 	): Promise<{ success: boolean; deletedCount: number }> {
-		const { workspace, olderThanDays, keepProtected = true } = params as {
+		const {
+			workspace,
+			olderThanDays,
+			keepProtected = true,
+		} = params as {
 			workspace: string;
 			olderThanDays?: number;
 			keepProtected?: boolean;
@@ -1823,7 +1830,7 @@ export class SnapBackDaemon extends EventEmitter {
 
 		try {
 			const snapshotManager = getSnapshotManager(workspace);
-			
+
 			// Get snapshot
 			const snapshot = await snapshotManager.get(snapshotId);
 			if (!snapshot) {
@@ -1989,6 +1996,57 @@ export class SnapBackDaemon extends EventEmitter {
 			return {
 				learnings: [],
 				count: 0,
+			};
+		}
+	}
+
+	/**
+	 * Handle learning.list - List all learnings in a workspace
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 1: Learning operations
+	 */
+	private async handleLearningList(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, limit } = params as {
+			workspace: string;
+			limit?: number;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const intel = getIntelligence(workspace);
+			const allLearnings = intel.queryLearnings([]);
+
+			// Apply limit if provided (default to 50)
+			const limitedLearnings = allLearnings.slice(0, limit || 50);
+
+			const learnings = limitedLearnings.map((l) => ({
+				type: l.type,
+				trigger: Array.isArray(l.trigger) ? l.trigger.join(", ") : l.trigger,
+				action: l.action,
+				source: l.source,
+				timestamp: l.timestamp ? new Date(l.timestamp).toISOString() : undefined,
+			}));
+
+			this.logger.debug("Learning list completed", {
+				requestId,
+				workspace,
+				resultsCount: learnings.length,
+				total: allLearnings.length,
+			});
+
+			return {
+				learnings,
+				total: allLearnings.length,
+			};
+		} catch (err) {
+			this.logger.warn("Failed to list learnings via Intelligence", { requestId, error: String(err) });
+
+			// Return empty results on error
+			return {
+				learnings: [],
+				total: 0,
 			};
 		}
 	}
