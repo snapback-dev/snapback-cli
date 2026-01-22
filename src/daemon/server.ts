@@ -869,6 +869,10 @@ export class SnapBackDaemon extends EventEmitter {
 			case "snapshot.restore":
 				return this.handleSnapshotRestore(params, requestId);
 
+			// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Snapshot delete handler
+			case "snapshot.delete":
+				return this.handleSnapshotDelete(params, requestId);
+
 			case "learning.add":
 				return this.handleLearningAdd(params, requestId);
 
@@ -1548,6 +1552,50 @@ export class SnapBackDaemon extends EventEmitter {
 				dryRun: !!dryRun,
 				changes: [],
 				errors: [err instanceof Error ? err.message : String(err)],
+			};
+		}
+	}
+
+	/**
+	 * Handle snapshot.delete - Delete a snapshot by ID
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Snapshot domain delegation
+	 */
+	private async handleSnapshotDelete(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ deleted: boolean; snapshotId: string }> {
+		const { workspace, snapshotId } = params as {
+			workspace: string;
+			snapshotId: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!snapshotId || typeof snapshotId !== "string") {
+			throw new InvalidParamsError("snapshotId is required");
+		}
+
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			await snapshotManager.delete(snapshotId);
+
+			this.logger.info("Snapshot deleted via daemon", {
+				workspace,
+				snapshotId,
+			});
+
+			return {
+				deleted: true,
+				snapshotId,
+			};
+		} catch (err) {
+			this.logger.warn("SDK snapshot delete failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				deleted: false,
+				snapshotId,
 			};
 		}
 	}

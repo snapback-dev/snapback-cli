@@ -194,6 +194,12 @@ export interface DeleteSnapshotParams {
 	snapshotId: string;
 }
 
+// Add result type for delete
+export interface DeleteSnapshotResult {
+	deleted: boolean;
+	snapshotId: string;
+}
+
 export interface AddLearningParams {
 	workspace: string;
 	type: "pattern" | "pitfall" | "efficiency" | "discovery" | "workflow";
