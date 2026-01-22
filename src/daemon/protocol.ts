@@ -112,6 +112,11 @@ export type DaemonMethod =
 	| "violation.report"
 	| "violation.list"
 
+	// Protection (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+	| "protection.getLevel"
+	| "protection.setLevel"
+	| "protection.list"
+
 	// File watching (proactive)
 	| "watch.subscribe"
 	| "watch.unsubscribe"
@@ -252,6 +257,36 @@ export interface ReportViolationParams {
 
 export interface ListViolationsParams {
 	workspace: string;
+}
+
+// =============================================================================
+// PROTECTION PARAMETERS (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+// =============================================================================
+
+/**
+ * Protection level types (canonical format)
+ * - watch: Silent auto-snapshot on save
+ * - warn: Show notification before save
+ * - block: Require explicit snapshot or override
+ */
+export type ProtectionLevelValue = "watch" | "warn" | "block";
+
+export interface ProtectionGetLevelParams {
+	workspace: string;
+	filePath: string;
+}
+
+export interface ProtectionSetLevelParams {
+	workspace: string;
+	filePath: string;
+	level: ProtectionLevelValue;
+	reason?: string;
+}
+
+export interface ProtectionListParams {
+	workspace: string;
+	level?: ProtectionLevelValue;
+	limit?: number;
 }
 
 export interface WatchSubscribeParams {
@@ -478,6 +513,69 @@ export interface ReportViolationResult {
 	count: number;
 	promoted: boolean;
 	promotedTo?: "pattern" | "automation";
+}
+
+// =============================================================================
+// PROTECTION RESULTS (ARCHITECTURE_REFACTOR_SPEC.md Sprint 1)
+// =============================================================================
+
+export interface ProtectionGetLevelResult {
+	level: ProtectionLevelValue | null;
+	reason?: string;
+	pattern?: string;
+}
+
+export interface ProtectionSetLevelResult {
+	success: boolean;
+	previousLevel?: ProtectionLevelValue;
+}
+
+export interface ProtectedFileInfo {
+	path: string;
+	level: ProtectionLevelValue;
+	pattern?: string;
+	reason?: string;
+	protectedAt?: string;
+}
+
+export interface ProtectionListResult {
+	files: ProtectedFileInfo[];
+	total: number;
+}
+
+export interface ListViolationsResult {
+	violations: Array<{
+		id: string;
+		type: string;
+		file: string;
+		whatHappened: string;
+		whyItHappened: string;
+		prevention: string;
+		occurrences: number;
+		createdAt: string;
+	}>;
+	total: number;
+}
+
+export interface ComprehensiveValidateResult {
+	passed: boolean;
+	patternViolations: Array<{
+		pattern: string;
+		file: string;
+		line?: number;
+		message: string;
+	}>;
+	typescriptErrors: Array<{
+		file: string;
+		line: number;
+		message: string;
+	}>;
+	lintErrors: Array<{
+		file: string;
+		line: number;
+		message: string;
+		rule?: string;
+	}>;
 }
 
 // =============================================================================
