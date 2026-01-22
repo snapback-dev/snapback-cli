@@ -95,7 +95,11 @@ function getIntelligence(workspaceRoot: string): Intelligence {
 		});
 		intelligenceInstances.set(workspaceRoot, intel);
 	}
-	return intelligenceInstances.get(workspaceRoot)!;
+	const instance = intelligenceInstances.get(workspaceRoot);
+	if (!instance) {
+		throw new Error(`Intelligence instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
 }
 
 // =============================================================================
@@ -150,7 +154,11 @@ export function getRuntimeRouter(workspaceRoot: string): RuntimeRouter {
 		runtimeRouterInstances.set(workspaceRoot, router);
 	}
 
-	return runtimeRouterInstances.get(workspaceRoot)!;
+	const instance = runtimeRouterInstances.get(workspaceRoot);
+	if (!instance) {
+		throw new Error(`RuntimeRouter instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
 }
 
 /**
@@ -194,7 +202,11 @@ function getSnapshotManager(workspaceRoot: string): SnapshotManager {
 		});
 		snapshotManagerInstances.set(workspaceRoot, manager);
 	}
-	return snapshotManagerInstances.get(workspaceRoot)!;
+	const instance = snapshotManagerInstances.get(workspaceRoot);
+	if (!instance) {
+		throw new Error(`SnapshotManager instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
 }
 
 // =============================================================================
@@ -222,7 +234,11 @@ function getProtectionManager(workspaceRoot: string): ProtectionManager {
 		});
 		protectionManagerInstances.set(workspaceRoot, manager);
 	}
-	return protectionManagerInstances.get(workspaceRoot)!;
+	const instance = protectionManagerInstances.get(workspaceRoot);
+	if (!instance) {
+		throw new Error(`ProtectionManager instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
 }
 
 // =============================================================================
@@ -872,6 +888,19 @@ export class SnapBackDaemon extends EventEmitter {
 			// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Snapshot delete handler
 			case "snapshot.delete":
 				return this.handleSnapshotDelete(params, requestId);
+
+			// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Remaining snapshot operations
+			case "snapshot.bulkDelete":
+				return this.handleSnapshotBulkDelete(params, requestId);
+
+			case "snapshot.protect":
+				return this.handleSnapshotProtect(params, requestId);
+
+			case "snapshot.unprotect":
+				return this.handleSnapshotUnprotect(params, requestId);
+
+			case "snapshot.rename":
+				return this.handleSnapshotRename(params, requestId);
 
 			case "learning.add":
 				return this.handleLearningAdd(params, requestId);
@@ -1600,6 +1629,247 @@ export class SnapBackDaemon extends EventEmitter {
 		}
 	}
 
+	/**
+	 * Handle snapshot.bulkDelete - Bulk delete snapshots by age
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Remaining snapshot operations
+	 */
+	private async handleSnapshotBulkDelete(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ success: boolean; deletedCount: number }> {
+		const { workspace, olderThanDays, keepProtected = true } = params as {
+			workspace: string;
+			olderThanDays?: number;
+			keepProtected?: boolean;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+
+			// Calculate cutoff time
+			const cutoffTime = olderThanDays
+				? Date.now() - olderThanDays * 24 * 60 * 60 * 1000
+				: Date.now() - 30 * 24 * 60 * 60 * 1000; // Default: 30 days
+
+			// Get all snapshots and filter by age
+			const allSnapshots = await snapshotManager.list();
+			const toDelete = allSnapshots.filter((s) => {
+				// Skip if newer than cutoff
+				if (s.timestamp >= cutoffTime) {
+					return false;
+				}
+				// Skip protected if requested
+				if (keepProtected && s.meta?.protected) {
+					return false;
+				}
+				return true;
+			});
+
+			// Delete each snapshot
+			let deletedCount = 0;
+			for (const snapshot of toDelete) {
+				try {
+					// Unprotect if needed
+					if (snapshot.meta?.protected) {
+						await snapshotManager.unprotect(snapshot.id);
+					}
+					await snapshotManager.delete(snapshot.id);
+					deletedCount++;
+				} catch (err) {
+					this.logger.warn("Failed to delete snapshot in bulk operation", {
+						snapshotId: snapshot.id,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
+			}
+
+			this.logger.info("Bulk delete completed via daemon", {
+				workspace,
+				olderThanDays: olderThanDays || 30,
+				keepProtected,
+				deletedCount,
+			});
+
+			return {
+				success: true,
+				deletedCount,
+			};
+		} catch (err) {
+			this.logger.warn("SDK bulk delete failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				success: false,
+				deletedCount: 0,
+			};
+		}
+	}
+
+	/**
+	 * Handle snapshot.protect - Mark snapshot as protected
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Remaining snapshot operations
+	 */
+	private async handleSnapshotProtect(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ success: boolean; snapshotId: string }> {
+		const { workspace, snapshotId } = params as {
+			workspace: string;
+			snapshotId: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!snapshotId || typeof snapshotId !== "string") {
+			throw new InvalidParamsError("snapshotId is required");
+		}
+
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			await snapshotManager.protect(snapshotId);
+
+			this.logger.info("Snapshot protected via daemon", {
+				workspace,
+				snapshotId,
+			});
+
+			return {
+				success: true,
+				snapshotId,
+			};
+		} catch (err) {
+			this.logger.warn("SDK snapshot protect failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				success: false,
+				snapshotId,
+			};
+		}
+	}
+
+	/**
+	 * Handle snapshot.unprotect - Remove protection from snapshot
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Remaining snapshot operations
+	 */
+	private async handleSnapshotUnprotect(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ success: boolean; snapshotId: string }> {
+		const { workspace, snapshotId } = params as {
+			workspace: string;
+			snapshotId: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!snapshotId || typeof snapshotId !== "string") {
+			throw new InvalidParamsError("snapshotId is required");
+		}
+
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			await snapshotManager.unprotect(snapshotId);
+
+			this.logger.info("Snapshot unprotected via daemon", {
+				workspace,
+				snapshotId,
+			});
+
+			return {
+				success: true,
+				snapshotId,
+			};
+		} catch (err) {
+			this.logger.warn("SDK snapshot unprotect failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				success: false,
+				snapshotId,
+			};
+		}
+	}
+
+	/**
+	 * Handle snapshot.rename - Rename a snapshot
+	 * ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Remaining snapshot operations
+	 */
+	private async handleSnapshotRename(
+		params: Record<string, unknown>,
+		_requestId: string,
+	): Promise<{ success: boolean; snapshotId: string; newName: string }> {
+		const { workspace, snapshotId, newName } = params as {
+			workspace: string;
+			snapshotId: string;
+			newName: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!snapshotId || typeof snapshotId !== "string") {
+			throw new InvalidParamsError("snapshotId is required");
+		}
+		if (!newName || typeof newName !== "string") {
+			throw new InvalidParamsError("newName is required");
+		}
+
+		try {
+			const snapshotManager = getSnapshotManager(workspace);
+			
+			// Get snapshot
+			const snapshot = await snapshotManager.get(snapshotId);
+			if (!snapshot) {
+				throw new Error(`Snapshot ${snapshotId} not found`);
+			}
+
+			// Update name in metadata
+			const updated = {
+				...snapshot,
+				meta: {
+					...snapshot.meta,
+					name: newName,
+				},
+			};
+
+			// Save updated snapshot (reuse storage adapter directly)
+			const storage = storageInstances.get(workspace);
+			if (!storage) {
+				throw new Error("Storage not found for workspace");
+			}
+
+			await storage.save(updated);
+
+			this.logger.info("Snapshot renamed via daemon", {
+				workspace,
+				snapshotId,
+				newName,
+			});
+
+			return {
+				success: true,
+				snapshotId,
+				newName,
+			};
+		} catch (err) {
+			this.logger.warn("SDK snapshot rename failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return {
+				success: false,
+				snapshotId,
+				newName,
+			};
+		}
+	}
+
 	private async handleLearningAdd(params: Record<string, unknown>, requestId: string): Promise<unknown> {
 		const { workspace, type, trigger, action, source } = params as {
 			workspace: string;
@@ -2144,8 +2414,10 @@ export class SnapBackDaemon extends EventEmitter {
 				subscribers: new Set([requestId]),
 			});
 		} else {
-			const ctx = this.workspaces.get(workspace)!;
-			ctx.subscribers.add(requestId);
+			const ctx = this.workspaces.get(workspace);
+			if (ctx) {
+				ctx.subscribers.add(requestId);
+			}
 		}
 
 		this.logger.debug("Watch subscription added", {

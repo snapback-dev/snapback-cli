@@ -93,6 +93,10 @@ export type DaemonMethod =
 	| "snapshot.restore"
 	| "snapshot.list"
 	| "snapshot.delete"
+	| "snapshot.bulkDelete"
+	| "snapshot.protect"
+	| "snapshot.unprotect"
+	| "snapshot.rename"
 
 	// Learnings
 	| "learning.add"
@@ -194,10 +198,59 @@ export interface DeleteSnapshotParams {
 	snapshotId: string;
 }
 
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Bulk delete params
+export interface BulkDeleteSnapshotsParams {
+	workspace: string;
+	olderThanDays?: number;
+	keepProtected?: boolean;
+}
+
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Protect/Unprotect params
+export interface ProtectSnapshotParams {
+	workspace: string;
+	snapshotId: string;
+}
+
+export interface UnprotectSnapshotParams {
+	workspace: string;
+	snapshotId: string;
+}
+
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Rename params
+export interface RenameSnapshotParams {
+	workspace: string;
+	snapshotId: string;
+	newName: string;
+}
+
 // Add result type for delete
 export interface DeleteSnapshotResult {
 	deleted: boolean;
 	snapshotId: string;
+}
+
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Bulk delete result
+export interface BulkDeleteSnapshotsResult {
+	success: boolean;
+	deletedCount: number;
+}
+
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Protect/Unprotect results
+export interface ProtectSnapshotResult {
+	success: boolean;
+	snapshotId: string;
+}
+
+export interface UnprotectSnapshotResult {
+	success: boolean;
+	snapshotId: string;
+}
+
+// ARCHITECTURE_REFACTOR_SPEC.md Sprint 3: Rename result
+export interface RenameSnapshotResult {
+	success: boolean;
+	snapshotId: string;
+	newName: string;
 }
 
 export interface AddLearningParams {
