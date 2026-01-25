@@ -2451,8 +2451,11 @@ export class SnapBackDaemon extends EventEmitter {
 			throw new InvalidParamsError("workspace is required");
 		}
 
-		// Validate workspace path
-		validatePath(workspace, workspace);
+		// Validate workspace path exists and is a directory (not using file path validator)
+		// Workspace paths are intentionally absolute - they define the root context
+		if (!existsSync(workspace)) {
+			throw new InvalidParamsError(`Workspace path does not exist: ${workspace}`);
+		}
 
 		const fileWatcher = getFileWatcherService();
 
