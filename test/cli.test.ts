@@ -77,9 +77,10 @@ describe("CLI Unit Tests", () => {
 		expect(typeof createCLI).toBe("function");
 	});
 
-	it("should create a program instance", async () => {
-		// Import the program directly
-		const { program } = await import("../src/index");
+	it("should create a program instance via createCLI", async () => {
+		// Import and call createCLI
+		const { createCLI } = await import("../src/index");
+		const program = await createCLI();
 
 		// Check that program is defined
 		expect(program).toBeDefined();
