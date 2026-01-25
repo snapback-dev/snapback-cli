@@ -23,7 +23,7 @@ import { createServer as createHttpServer, type Server as HttpServer } from "nod
 import { createServer, type Server, type Socket } from "node:net";
 import { platform } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core-runtime";
+import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core/runtime";
 import { Intelligence } from "@snapback/intelligence";
 import { LocalStorage, ProtectionManager, SnapshotManager } from "@snapback/sdk";
 

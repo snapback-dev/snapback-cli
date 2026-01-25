@@ -80,7 +80,6 @@
   "devDependencies": {
     "@snapback/contracts": "workspace:*",
     "@snapback/core": "workspace:*",
-    "@snapback/core-runtime": "workspace:*",
     "@snapback/engine": "workspace:*",
     "@snapback/intelligence": "workspace:*",
     "@snapback/mcp": "workspace:*",
