@@ -294,10 +294,18 @@ describe("daemon/server", () => {
 
 	describe("idle timeout", () => {
 		it("should track last activity time", async () => {
+			// Clean up lock file before test to prevent conflicts
+			try {
+				await unlink(TEST_LOCK);
+			} catch {
+				// Ignore if doesn't exist
+			}
+
 			const { SnapBackDaemon } = await import("../../src/daemon/server");
 			const daemon = new SnapBackDaemon({
 				socketPath: TEST_SOCKET,
 				pidPath: join(TEST_DIR, "daemon.pid"),
+				lockPath: TEST_LOCK,
 				idleTimeoutMs: 1000, // 1 second for testing
 				maxConnections: 5,
 				version: "1.0.0-test",
