@@ -69,7 +69,7 @@ export function createMcpCommand() {
 	// Default action: Run MCP server with stdio transport
 	// ==========================================================================
 	cmd.option("--stdio", "Use stdio transport (default)")
-		.option("--workspace <path>", "Workspace root path (auto-resolved if not provided)")
+		.option("--ws <path>", "Workspace root path (auto-resolved if not provided)")
 		.option(
 			"--tier <tier>",
 			"Override user tier (free|pro|enterprise). Auto-detected from SNAPBACK_API_KEY or SNAPBACK_TIER env var.",
@@ -78,7 +78,7 @@ export function createMcpCommand() {
 			// If --stdio is set, run the MCP server
 			if (options.stdio) {
 				try {
-					const workspaceValidation = resolveWorkspaceRoot(options.workspace);
+					const workspaceValidation = resolveWorkspaceRoot(options.ws);
 
 					if (!workspaceValidation.valid) {
 						console.error(`[SnapBack MCP] Workspace validation failed: ${workspaceValidation.error}`);
