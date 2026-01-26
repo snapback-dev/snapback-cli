@@ -17,7 +17,16 @@
 
 import { createConnection, type Socket } from "node:net";
 import { getSocketPath } from "../daemon/platform.js";
-import type { MCPInitializeResult, MCPToolsCallResult, MCPToolsListResult } from "../daemon/protocol.js";
+
+// =============================================================================
+// MCP RESULT TYPES (used for daemon responses)
+// =============================================================================
+
+// These types match what the daemon returns for MCP methods
+// We don't need to know their exact structure since we're just passing them through
+type MCPInitializeResult = Record<string, unknown>;
+type MCPToolsListResult = Record<string, unknown>;
+type MCPToolsCallResult = Record<string, unknown>;
 
 // =============================================================================
 // MCP PROTOCOL TYPES (JSON-RPC 2.0 over stdio)
