@@ -75,7 +75,8 @@ describe("Snapshot Tool Handlers", () => {
 			};
 
 			expect(json.success).toBe(true);
-			expect(json.snapshot.id).toMatch(/^snap-/);
+			// Engine uses snapshot-<description>-<timestamp>-<nanoid> format
+			expect(json.snapshot.id).toMatch(/^snapshot-/);
 			expect(json.snapshot.fileCount).toBe(1);
 		});
 
