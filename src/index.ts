@@ -35,6 +35,8 @@ export const cliState = {
 
 // New CLI commands
 import {
+	// ACP Server
+	acpCommand,
 	// Polish commands (Phase 6)
 	createAliasCommand,
 	// Shell completions
@@ -202,6 +204,7 @@ Documentation:
 
 	// MCP server (--stdio)
 	program.addCommand(mcpCommand);
+	program.addCommand(acpCommand);
 
 	// Protection management
 	program.addCommand(createProtectCommand());

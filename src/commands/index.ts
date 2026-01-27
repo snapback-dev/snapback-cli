@@ -149,6 +149,12 @@ export { mcpCommand } from "./mcp";
 export { createToolsCommand } from "./tools";
 
 // =============================================================================
+// ACP INTEGRATION COMMANDS
+// =============================================================================
+
+export { acpCommand, createAcpCommand } from "./acp";
+
+// =============================================================================
 // DAEMON COMMANDS
 // =============================================================================
 // These commands manage the SnapBack daemon lifecycle.
