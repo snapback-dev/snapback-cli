@@ -958,6 +958,12 @@ export class SnapBackDaemon extends EventEmitter {
 			case "learning.prune":
 				return this.handleLearningPrune(params, requestId);
 
+			case "learning.evaluate":
+				return this.handleLearningEvaluate(params, requestId);
+
+			case "learning.updateSession":
+				return this.handleLearningUpdateSession(params, requestId);
+
 			case "context.get":
 				return this.handleContextGet(params, requestId);
 
@@ -2190,6 +2196,174 @@ export class SnapBackDaemon extends EventEmitter {
 			});
 
 			throw new InternalError(`Pruning failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	/**
+	 * Handle learning evaluation (Phase 1 - Observe Mode)
+	 * Matches learnings against command context without modifying behavior.
+	 */
+	private async handleLearningEvaluate(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, commandName, args, filesOrPaths, intent } = params as {
+			workspace: string;
+			commandName: string;
+			args?: Record<string, unknown>;
+			filesOrPaths?: string[];
+			intent?: "implement" | "debug" | "refactor" | "review";
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!commandName || typeof commandName !== "string") {
+			throw new InvalidParamsError("commandName is required");
+		}
+
+		const startTime = performance.now();
+
+		try {
+			// Get or create LearningEvaluationService for this workspace
+			// Dynamic import to handle build order and optional dependency
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const intelligenceModule = (await import("@snapback/intelligence")) as any;
+			const storageModule = await import("@snapback/intelligence/storage");
+
+			const LearningEvaluationServiceClass = intelligenceModule.LearningEvaluationService;
+			const StateStoreClass = storageModule.StateStore;
+
+			if (!LearningEvaluationServiceClass) {
+				throw new Error("LearningEvaluationService not available - rebuild @snapback/intelligence");
+			}
+
+			const stateStore = new StateStoreClass({
+				snapbackDir: join(workspace, ".snapback"),
+			});
+			await stateStore.load();
+
+			// Default to observe mode (Phase 1), allow override via params
+			const mode = (params.mode as "observe" | "warn" | "apply-safe" | "apply-all" | "off") || "observe";
+			const evaluationService = new LearningEvaluationServiceClass(stateStore, mode, {
+				minConfidence: 0.4,
+				minScore: 0.5,
+				maxResults: 3,
+			});
+
+			// Evaluate learnings for this command
+			const result = await evaluationService.evaluate({
+				workspaceId: workspace,
+				commandName,
+				args,
+				filesOrPaths,
+				intent,
+			});
+
+			const durationMs = performance.now() - startTime;
+
+			this.logger.debug("Learning evaluation completed", {
+				requestId,
+				workspace,
+				commandName,
+				matchCount: result.selectedLearnings.length,
+				durationMs: Number(durationMs.toFixed(2)),
+			});
+
+			// Save state to persist access counts
+			if (stateStore.isDirty()) {
+				await stateStore.save();
+			}
+
+			return {
+				selectedLearnings: result.selectedLearnings,
+				debug: {
+					evaluatedCount: result.selectedLearnings.length,
+					durationMs,
+					skippedReason: result.debug?.skippedReason,
+				},
+			};
+		} catch (err) {
+			const durationMs = performance.now() - startTime;
+
+			this.logger.warn("Learning evaluation failed", {
+				requestId,
+				workspace,
+				commandName,
+				error: err instanceof Error ? err.message : String(err),
+				durationMs: Number(durationMs.toFixed(2)),
+			});
+
+			// Return empty result on failure (graceful degradation)
+			return {
+				selectedLearnings: [],
+				debug: {
+					evaluatedCount: 0,
+					durationMs,
+					skippedReason: `Evaluation error: ${err instanceof Error ? err.message : String(err)}`,
+				},
+			};
+		}
+	}
+
+	/**
+	 * Phase 2.6a: Update session's applied learnings
+	 */
+	private async handleLearningUpdateSession(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, sessionId, learningIds } = params as {
+			workspace: string;
+			sessionId: string;
+			learningIds: string[];
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!sessionId || typeof sessionId !== "string") {
+			throw new InvalidParamsError("sessionId is required");
+		}
+		if (!Array.isArray(learningIds)) {
+			throw new InvalidParamsError("learningIds must be an array");
+		}
+
+		try {
+			const storageModule = await import("@snapback/intelligence/storage");
+			const StateStoreClass = storageModule.StateStore;
+
+			const stateStore = new StateStoreClass({
+				snapbackDir: join(workspace, ".snapback"),
+			});
+			await stateStore.load();
+
+			const success = stateStore.updateSessionLearnings(sessionId, learningIds);
+
+			if (success && stateStore.isDirty()) {
+				await stateStore.save();
+			}
+
+			this.logger.debug("Session learnings updated", {
+				requestId,
+				workspace,
+				sessionId,
+				updatedCount: learningIds.length,
+				success,
+			});
+
+			return {
+				success,
+				sessionId,
+				updatedCount: success ? learningIds.length : 0,
+			};
+		} catch (err) {
+			this.logger.warn("Failed to update session learnings", {
+				requestId,
+				workspace,
+				sessionId,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			return {
+				success: false,
+				sessionId,
+				updatedCount: 0,
+			};
 		}
 	}
 

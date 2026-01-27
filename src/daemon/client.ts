@@ -488,6 +488,63 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
 	}
 
 	/**
+	 * Evaluate learnings for a command (Phase 1 - Observe Mode)
+	 * Returns matching learnings without applying them.
+	 */
+	async evaluateLearnings(
+		workspace: string,
+		commandName: string,
+		options?: {
+			args?: Record<string, unknown>;
+			filesOrPaths?: string[];
+			intent?: "implement" | "debug" | "refactor" | "review";
+			mode?: "observe" | "warn" | "apply-safe" | "apply-all" | "off";
+		},
+	): Promise<{
+		selectedLearnings: Array<{
+			id: string;
+			title: string;
+			type: "pattern" | "pitfall" | "efficiency" | "workflow" | "discovery";
+			score: number;
+			action: {
+				type: "add-flag" | "set-env" | "inject-validation" | "warn" | "suggest-file";
+				payload: Record<string, unknown>;
+			};
+			tags: string[];
+		}>;
+		debug?: {
+			evaluatedCount: number;
+			durationMs: number;
+			skippedReason?: string;
+		};
+	}> {
+		return this.request("learning.evaluate", {
+			workspace,
+			commandName,
+			...options,
+		});
+	}
+
+	/**
+	 * Update session's applied learnings (Phase 2.6a)
+	 */
+	async updateSessionLearnings(
+		workspace: string,
+		sessionId: string,
+		learningIds: string[],
+	): Promise<{
+		success: boolean;
+		sessionId: string;
+		updatedCount: number;
+	}> {
+		return this.request("learning.updateSession", {
+			workspace,
+			sessionId,
+			learningIds,
+		});
+	}
+
+	/**
 	 * Run quick validation on files
 	 */
 	async quickCheck(

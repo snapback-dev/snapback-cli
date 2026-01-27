@@ -6,6 +6,7 @@
  *
  * @module daemon/protocol
  */
+import type { LearningMode } from "@snapback/contracts";
 
 // =============================================================================
 // JSON-RPC 2.0 BASE TYPES
@@ -103,6 +104,8 @@ export type DaemonMethod =
 	| "learning.search"
 	| "learning.list"
 	| "learning.prune"
+	| "learning.evaluate"
+	| "learning.updateSession" // Phase 2.6a: Update session's applied learnings
 
 	// Context
 	| "context.get"
@@ -271,6 +274,23 @@ export interface SearchLearningsParams {
 export interface ListLearningsParams {
 	workspace: string;
 	limit?: number;
+}
+
+// Phase 1: Learning Evaluation (Proactive Learning System)
+export interface EvaluateLearningsParams {
+	workspace: string;
+	commandName: string;
+	args?: Record<string, unknown>;
+	filesOrPaths?: string[];
+	intent?: "implement" | "debug" | "refactor" | "review";
+	mode?: LearningMode;
+}
+
+// Phase 2.6a: Update session's applied learnings
+export interface UpdateSessionLearningsParams {
+	workspace: string;
+	sessionId: string;
+	learningIds: string[];
 }
 
 export interface GetContextParams {
@@ -530,6 +550,33 @@ export interface AddLearningResult {
 export interface SearchLearningsResult {
 	learnings: unknown[];
 	count: number;
+}
+
+// Phase 1: Learning Evaluation Result (Proactive Learning System)
+export interface EvaluateLearningsResult {
+	selectedLearnings: Array<{
+		id: string;
+		title: string;
+		type: "pattern" | "pitfall" | "efficiency" | "workflow" | "discovery";
+		score: number;
+		action: {
+			type: "add-flag" | "set-env" | "inject-validation" | "warn" | "suggest-file";
+			payload: Record<string, unknown>;
+		};
+		tags: string[];
+	}>;
+	debug?: {
+		evaluatedCount: number;
+		durationMs: number;
+		skippedReason?: string;
+	};
+}
+
+// Phase 2.6a: Update session's applied learnings result
+export interface UpdateSessionLearningsResult {
+	success: boolean;
+	sessionId: string;
+	updatedCount: number;
 }
 
 export interface GetContextResult {
