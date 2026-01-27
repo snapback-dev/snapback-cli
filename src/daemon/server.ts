@@ -26,6 +26,7 @@ import { dirname, join, relative } from "node:path";
 import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core/runtime";
 import { Intelligence } from "@snapback/intelligence";
 import { LocalStorage, ProtectionManager, SnapshotManager } from "@snapback/sdk";
+import { AutomatedLearningPruner } from "../services/learning-pruner.js";
 
 import {
 	DEFAULT_HEALTH_PORT,
@@ -38,6 +39,7 @@ import {
 } from "./constants.js";
 import {
 	DaemonError,
+	InternalError,
 	InvalidParamsError,
 	MethodNotFoundError,
 	ParseError,
@@ -242,6 +244,38 @@ function getProtectionManager(workspaceRoot: string): ProtectionManager {
 }
 
 // =============================================================================
+// LEARNING PRUNER SINGLETON (Automated Learning Lifecycle Management)
+// =============================================================================
+
+/**
+ * AutomatedLearningPruner instances per workspace (singleton pattern for background pruning)
+ */
+const learningPrunerInstances = new Map<string, AutomatedLearningPruner>();
+
+/**
+ * Get or create AutomatedLearningPruner instance for a workspace.
+ * Enables automated pruning of stale learnings and violations.
+ */
+function getLearningPruner(workspaceRoot: string): AutomatedLearningPruner {
+	if (!learningPrunerInstances.has(workspaceRoot)) {
+		// Create pruner with default config (archive-only mode for safety)
+		const pruner = new AutomatedLearningPruner({
+			workspaceRoot,
+			dryRun: false, // Actually archive files
+			maxAgeDays: 90,
+			minUsageCount: 3,
+			archiveDir: ".snapback/archive",
+		});
+		learningPrunerInstances.set(workspaceRoot, pruner);
+	}
+	const instance = learningPrunerInstances.get(workspaceRoot);
+	if (!instance) {
+		throw new Error(`AutomatedLearningPruner instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
+}
+
+// =============================================================================
 // CONFIGURATION
 // =============================================================================
 
@@ -303,6 +337,7 @@ export class SnapBackDaemon extends EventEmitter {
 	private connections = new Map<Socket, ConnectionContext>();
 	private workspaces = new Map<string, WorkspaceContext>();
 	private idleTimer: NodeJS.Timeout | null = null;
+	private pruningTimer: NodeJS.Timeout | null = null;
 	private startTime = 0;
 	private lastActivity = 0;
 	private _isRunning = false;
@@ -390,6 +425,9 @@ export class SnapBackDaemon extends EventEmitter {
 			// Start idle timer
 			this.resetIdleTimer();
 
+			// Start scheduled pruning (daily at 2am)
+			this.startScheduledPruning();
+
 			// Restore persisted state
 			await this.restoreState();
 
@@ -443,6 +481,12 @@ export class SnapBackDaemon extends EventEmitter {
 		if (this.idleTimer) {
 			clearTimeout(this.idleTimer);
 			this.idleTimer = null;
+		}
+
+		// Clear pruning timer
+		if (this.pruningTimer) {
+			clearTimeout(this.pruningTimer);
+			this.pruningTimer = null;
 		}
 
 		// Close all connections gracefully
@@ -910,6 +954,9 @@ export class SnapBackDaemon extends EventEmitter {
 
 			case "learning.list":
 				return this.handleLearningList(params, requestId);
+
+			case "learning.prune":
+				return this.handleLearningPrune(params, requestId);
 
 			case "context.get":
 				return this.handleContextGet(params, requestId);
@@ -2062,6 +2109,90 @@ export class SnapBackDaemon extends EventEmitter {
 		}
 	}
 
+	/**
+	 * Handle manual pruning trigger
+	 * Runs all pruning operations immediately for the specified workspace
+	 */
+	private async handleLearningPrune(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as {
+			workspace: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		this.logger.info("Manual pruning triggered", {
+			requestId,
+			workspace,
+		});
+
+		try {
+			const pruner = getLearningPruner(workspace);
+			await pruner.initialize();
+
+			// Run all pruning operations
+			const violationResult = await pruner.pruneStaleViolations();
+			const scoreResult = await pruner.updateLearningScores();
+			const dedupeResult = await pruner.deduplicateLearnings();
+			const archiveResult = await pruner.archiveStaleItems();
+
+			const totalArchived = violationResult.archivedCount + archiveResult.archived.learnings;
+
+			this.logger.info("Manual pruning completed", {
+				requestId,
+				workspace,
+				violations: violationResult.archivedCount,
+				learnings: archiveResult.archived.learnings,
+				lowConfidence: scoreResult.lowConfidenceCount,
+				duplicates: dedupeResult.mergedCount,
+			});
+
+			// Broadcast notification if anything was archived
+			if (totalArchived > 0) {
+				this.broadcastToWorkspace(workspace, {
+					type: "learning.pruned",
+					timestamp: Date.now(),
+					workspace,
+					data: {
+						violationsArchived: violationResult.archivedCount,
+						learningsArchived: archiveResult.archived.learnings,
+						archivePath: archiveResult.archivePath,
+						message: `Archived ${totalArchived} stale items. Run 'snap learning review' to approve deletion.`,
+					},
+				});
+			}
+
+			return {
+				success: true,
+				violations: {
+					totalChecked: violationResult.totalChecked,
+					staleCount: violationResult.staleCount,
+					archivedCount: violationResult.archivedCount,
+				},
+				learnings: {
+					totalScored: scoreResult.totalScored,
+					lowConfidenceCount: scoreResult.lowConfidenceCount,
+					avgConfidence: scoreResult.avgConfidence,
+					archivedCount: archiveResult.archived.learnings,
+				},
+				deduplication: {
+					totalChecked: dedupeResult.totalChecked,
+					mergedCount: dedupeResult.mergedCount,
+				},
+				archivePath: archiveResult.archivePath,
+			};
+		} catch (err) {
+			this.logger.error("Manual pruning failed", {
+				requestId,
+				workspace,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			throw new InternalError(`Pruning failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
 	private async handleContextGet(params: Record<string, unknown>, requestId: string): Promise<unknown> {
 		const { workspace, task, files, keywords } = params as {
 			workspace: string;
@@ -2383,6 +2514,113 @@ export class SnapBackDaemon extends EventEmitter {
 				this.resetIdleTimer();
 			}
 		}, this.config.idleTimeoutMs || DEFAULT_IDLE_TIMEOUT_MS);
+	}
+
+	// =========================================================================
+	// SCHEDULED PRUNING METHODS
+	// =========================================================================
+
+	/**
+	 * Start scheduled pruning (daily at 2am local time)
+	 */
+	private startScheduledPruning(): void {
+		// Calculate milliseconds until next 2am
+		const now = new Date();
+		const next2am = new Date();
+		next2am.setHours(2, 0, 0, 0);
+
+		// If 2am has passed today, schedule for tomorrow
+		if (now > next2am) {
+			next2am.setDate(next2am.getDate() + 1);
+		}
+
+		const msUntil2am = next2am.getTime() - now.getTime();
+
+		this.logger.info("Scheduled pruning enabled", {
+			nextRun: next2am.toISOString(),
+			msUntil: msUntil2am,
+		});
+
+		// Schedule the first run
+		this.pruningTimer = setTimeout(() => {
+			this.runScheduledPruning();
+			// After first run, schedule daily
+			this.pruningTimer = setInterval(
+				() => this.runScheduledPruning(),
+				24 * 60 * 60 * 1000, // 24 hours
+			);
+		}, msUntil2am);
+	}
+
+	/**
+	 * Run scheduled pruning for all workspaces
+	 */
+	private async runScheduledPruning(): Promise<void> {
+		this.logger.info("Running scheduled pruning", {
+			workspaceCount: this.workspaces.size,
+		});
+
+		const results: Array<{
+			workspace: string;
+			violations: number;
+			learnings: number;
+		}> = [];
+
+		for (const [workspaceRoot, _ctx] of this.workspaces) {
+			try {
+				const pruner = getLearningPruner(workspaceRoot);
+				await pruner.initialize();
+
+				// Run all pruning operations
+				const violationResult = await pruner.pruneStaleViolations();
+				const scoreResult = await pruner.updateLearningScores();
+				const dedupeResult = await pruner.deduplicateLearnings();
+				const archiveResult = await pruner.archiveStaleItems();
+
+				const totalArchived = violationResult.archivedCount + archiveResult.archived.learnings;
+
+				if (totalArchived > 0) {
+					results.push({
+						workspace: workspaceRoot,
+						violations: violationResult.archivedCount,
+						learnings: archiveResult.archived.learnings,
+					});
+
+					this.logger.info("Pruning completed for workspace", {
+						workspace: workspaceRoot,
+						violations: violationResult.archivedCount,
+						learnings: archiveResult.archived.learnings,
+						lowConfidence: scoreResult.lowConfidenceCount,
+						duplicates: dedupeResult.mergedCount,
+					});
+
+					// Broadcast notification to workspace
+					this.broadcastToWorkspace(workspaceRoot, {
+						type: "learning.pruned",
+						timestamp: Date.now(),
+						workspace: workspaceRoot,
+						data: {
+							violationsArchived: violationResult.archivedCount,
+							learningsArchived: archiveResult.archived.learnings,
+							archivePath: archiveResult.archivePath,
+							message: `Archived ${totalArchived} stale items. Run 'snap learning review' to approve deletion.`,
+						},
+					});
+				}
+			} catch (error) {
+				this.logger.error("Pruning failed for workspace", {
+					workspace: workspaceRoot,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
+
+		this.logger.info("Scheduled pruning complete", {
+			workspacesProcessed: this.workspaces.size,
+			workspacesWithArchives: results.length,
+			totalViolations: results.reduce((sum, r) => sum + r.violations, 0),
+			totalLearnings: results.reduce((sum, r) => sum + r.learnings, 0),
+		});
 	}
 
 	// =========================================================================

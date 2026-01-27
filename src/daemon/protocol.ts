@@ -102,6 +102,7 @@ export type DaemonMethod =
 	| "learning.add"
 	| "learning.search"
 	| "learning.list"
+	| "learning.prune"
 
 	// Context
 	| "context.get"

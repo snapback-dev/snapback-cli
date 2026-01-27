@@ -461,6 +461,33 @@ export class DaemonClient extends EventEmitter<DaemonClientEvents> {
 	}
 
 	/**
+	 * Manually trigger pruning of stale learnings and violations
+	 */
+	async pruneLearnings(workspace: string): Promise<{
+		success: boolean;
+		violations: {
+			totalChecked: number;
+			staleCount: number;
+			archivedCount: number;
+		};
+		learnings: {
+			totalScored: number;
+			lowConfidenceCount: number;
+			avgConfidence: number;
+			archivedCount: number;
+		};
+		deduplication: {
+			totalChecked: number;
+			mergedCount: number;
+		};
+		archivePath: string;
+	}> {
+		return this.request("learning.prune", {
+			workspace,
+		});
+	}
+
+	/**
 	 * Run quick validation on files
 	 */
 	async quickCheck(
