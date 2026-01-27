@@ -296,52 +296,125 @@ export class AutomatedLearningPruner {
 	/**
 	 * Archive stale learnings and violations
 	 *
+	 * TWO-PHASE DECAY LIFECYCLE (consolidated from LearningGCService):
+	 * Phase 1: Archive (30d unused, usageCount <3) - set archived flag in StateStore
+	 * Phase 2: Delete (90d archived) - permanently remove from StateStore
+	 *
 	 * Archives:
 	 * - Learnings with relevanceScore < 0.3
-	 * - Learnings older than maxAgeDays with no usage
+	 * - Learnings older than maxAgeDays with no usage (file-based fallback for migration)
 	 */
 	async archiveStaleItems(): Promise<ArchiveResult> {
 		const learnings = this.stateStore.getLearnings();
-		const violations = this.stateStore.getViolations();
-
+	
 		const staleLearnings: StoredLearning[] = [];
 		const now = Date.now();
-
+	
+		// Phase 1: Identify archive candidates (30d unused, <3 usage)
 		for (const learning of learnings) {
+			// Skip already archived
+			if (learning.archived) {
+				continue;
+			}
+	
 			const score = learning.relevanceScore ?? 1.0;
 			const createdAt = new Date(learning.createdAt).getTime();
 			const daysSinceCreated = (now - createdAt) / (1000 * 60 * 60 * 24);
 			const usageCount = (learning.accessCount || 0) + (learning.appliedCount || 0);
-
+	
+			// Archive if low confidence OR (old + unused)
 			if (score < 0.3 || (daysSinceCreated > this.config.maxAgeDays && usageCount === 0)) {
 				staleLearnings.push(learning);
 			}
 		}
-
+	
 		const archiveDir = join(this.config.workspaceRoot, this.config.archiveDir);
 		let archivedLearnings = 0;
 		const archivedViolations = 0;
-
-		if (!this.config.dryRun && (staleLearnings.length > 0 || violations.length > 0)) {
+	
+		if (!this.config.dryRun && staleLearnings.length > 0) {
 			await mkdir(archiveDir, { recursive: true });
-
-			// Archive learnings
+	
+			// USE STATESTORE FLAGS (Phase 2.6b consolidation)
+			for (const learning of staleLearnings) {
+				const success = this.stateStore.archiveLearning(learning.id);
+				if (success) {
+					archivedLearnings++;
+				}
+			}
+	
+			// Fallback: Also write to file for backup/migration (legacy support)
 			if (staleLearnings.length > 0) {
 				const archivePath = join(archiveDir, `learnings_${Date.now()}.jsonl`);
 				const content = staleLearnings.map((l) => JSON.stringify(l)).join("\n");
 				await writeFile(archivePath, content, "utf-8");
-				archivedLearnings = staleLearnings.length;
 			}
-
+	
+			// Persist StateStore changes
+			if (archivedLearnings > 0) {
+				await this.stateStore.save();
+			}
+	
 			// Note: Violations are handled by pruneStaleViolations()
 		}
-
+	
 		return {
 			archived: {
 				learnings: this.config.dryRun ? staleLearnings.length : archivedLearnings,
 				violations: this.config.dryRun ? 0 : archivedViolations,
 			},
 			archivePath: archiveDir,
+			dryRun: this.config.dryRun,
+		};
+	}
+	
+	/**
+	 * Delete permanently archived learnings (Phase 2 of two-phase decay)
+	 *
+	 * Deletes learnings that have been:
+	 * - Archived for > 90 days (default)
+	 * - Confirmed as no longer relevant
+	 *
+	 * Safety: Requires explicit call, not part of default archive flow
+	 */
+	async deletePermanentlyArchived(): Promise<{ deletedCount: number; dryRun: boolean }> {
+		const learnings = this.stateStore.getLearnings();
+		const now = Date.now();
+		const deleteThresholdDays = 90; // Fixed: 90 days after archival
+	
+		const deleteCandidates: StoredLearning[] = [];
+	
+		for (const learning of learnings) {
+			if (!learning.archived || !learning.archivedAt) {
+				continue;
+			}
+	
+			const archivedAt = new Date(learning.archivedAt).getTime();
+			const daysSinceArchived = (now - archivedAt) / (1000 * 60 * 60 * 24);
+	
+			if (daysSinceArchived > deleteThresholdDays) {
+				deleteCandidates.push(learning);
+			}
+		}
+	
+		let deletedCount = 0;
+	
+		if (!this.config.dryRun && deleteCandidates.length > 0) {
+			for (const learning of deleteCandidates) {
+				const success = this.stateStore.deleteLearning(learning.id);
+				if (success) {
+					deletedCount++;
+				}
+			}
+	
+			// Persist StateStore changes
+			if (deletedCount > 0) {
+				await this.stateStore.save();
+			}
+		}
+	
+		return {
+			deletedCount: this.config.dryRun ? deleteCandidates.length : deletedCount,
 			dryRun: this.config.dryRun,
 		};
 	}

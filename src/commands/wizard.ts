@@ -448,12 +448,13 @@ async function mcpStep(state: WizardState): Promise<WizardState> {
 	});
 
 	if (enableMcp) {
-		// Actually configure each client
-		const mcpConfig = getSnapbackMCPConfig({
-			workspaceRoot: state.workspaceRoot || undefined,
-		});
-
+		// Configure each client with correct transport
 		for (const client of detection.needsSetup) {
+			// Generate config per-client (Claude Desktop requires stdio, others can use HTTP)
+			const mcpConfig = getSnapbackMCPConfig({
+				workspaceRoot: state.workspaceRoot || undefined,
+				client: client.format, // Pass client format for transport selection
+			});
 			process.stdout.write(chalk.gray(`    Configuring ${client.displayName}...`));
 			const result = writeClientConfig(client, mcpConfig);
 			if (result.success) {

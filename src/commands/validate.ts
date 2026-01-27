@@ -76,6 +76,8 @@ import { resolve } from "node:path";
 import type { ReviewRecommendation } from "@snapback/intelligence";
 import chalk from "chalk";
 import { Command } from "commander";
+import { DaemonClient } from "../daemon/client";
+import { getPidPath, getSocketPath } from "../daemon/platform";
 import { GitClient, isCodeFile } from "../services/git-client";
 import { getIntelligence } from "../services/intelligence-service";
 import { displayBox } from "../utils/display";
@@ -254,6 +256,42 @@ async function handleValidateCommand(file: string | undefined, options: Validate
 		let hasErrors = false;
 		let progressCompleted = false;
 
+		// STEP 4a: Evaluate learnings in warn mode (Phase 2)
+		// For high-value commands (verify), surface warn-type learnings
+		const warnings: Array<{ title: string; message: string; severity: string }> = [];
+		try {
+			const daemonClient = new DaemonClient({
+				socketPath: getSocketPath(),
+				pidPath: getPidPath(),
+				autoStart: true, // Start daemon if not running
+			});
+
+			// Try to evaluate learnings (non-blocking)
+			await daemonClient.connect();
+			const learningResult = await daemonClient.evaluateLearnings(cwd, "validate", {
+				filesOrPaths: filesToValidate,
+				intent: "review",
+				mode: "warn",
+			});
+			await daemonClient.disconnect();
+
+			// Collect warn-type learnings
+			if (learningResult.selectedLearnings && learningResult.selectedLearnings.length > 0) {
+				for (const learning of learningResult.selectedLearnings) {
+					if (learning.action.type === "warn" && learning.action.payload) {
+						const payload = learning.action.payload as { message?: string; severity?: string };
+						warnings.push({
+							title: learning.title || "Warning",
+							message: payload.message || "Check code for potential issues",
+							severity: payload.severity || "warning",
+						});
+					}
+				}
+			}
+		} catch {
+			// Daemon not available or learning evaluation failed - continue without warnings
+		}
+
 		try {
 			for (const filePath of filesToValidate) {
 				progress.update(filePath);
@@ -305,7 +343,7 @@ async function handleValidateCommand(file: string | undefined, options: Validate
 			if (options.json) {
 				console.log(JSON.stringify(results, null, 2));
 			} else if (!options.quiet || hasErrors) {
-				displayValidationResults(results, hasErrors);
+				displayValidationResults(results, hasErrors, warnings);
 			}
 
 			// STEP 7: Exit with appropriate code
@@ -407,24 +445,48 @@ async function getFilesToValidate(file: string | undefined, all: boolean | undef
  *
  * @param results - Array of validation results
  * @param hasErrors - Whether any files failed
+ * @param warnings - Array of warn-type learnings (Phase 2)
  *
  * @remarks
  * ## Display Structure
  *
- * 1. Results table (always if not quiet)
+ * 1. Warnings from learnings (Phase 2 warn mode)
+ *    - Uses displayBox() with type: "warning"
+ *    - Shows learning-based pitfalls/patterns
+ *
+ * 2. Results table (always if not quiet)
  *    - Uses createValidationTable()
  *    - Shows file, passed status, confidence, issues
  *
- * 2. Summary box (only if errors)
+ * 3. Summary box (only if errors)
  *    - Uses displayBox() with type: "error"
  *    - Lists failed files
  *
- * 3. Tip (only if errors)
+ * 4. Tip (only if errors)
  *    - Suggests running patterns report
  *
  * @internal
  */
-function displayValidationResults(results: FileValidationResult[], hasErrors: boolean): void {
+function displayValidationResults(
+	results: FileValidationResult[],
+	hasErrors: boolean,
+	warnings: Array<{ title: string; message: string; severity: string }> = [],
+): void {
+	// PART 0: Display learning warnings (Phase 2)
+	if (warnings.length > 0) {
+		console.log();
+		for (const warning of warnings) {
+			const warningType = warning.severity === "error" ? "error" : "warning";
+			console.log(
+				displayBox({
+					title: `⚠️  ${warning.title}`,
+					content: warning.message,
+					type: warningType,
+				}),
+			);
+		}
+	}
+
 	// PART 1: Results table
 	console.log();
 	console.log(createValidationTable(results));

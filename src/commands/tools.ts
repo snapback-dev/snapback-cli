@@ -367,13 +367,15 @@ async function configureClient(
 			}
 		}
 
-		// Build MCP config
+		// Build MCP config - pass client format for transport selection
+		// (Claude Desktop requires stdio transport, others can use HTTP)
 		const mcpConfig = getSnapbackMCPConfig({
 			apiKey,
 			useNpx: npmMode,
 			useLocalDev: devMode,
 			localCliPath,
 			workspaceRoot,
+			client: client.format, // Pass client format for transport selection
 		});
 
 		if (dryRun) {
