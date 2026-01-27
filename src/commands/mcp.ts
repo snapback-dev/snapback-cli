@@ -22,6 +22,8 @@ import {
 	getServerKey,
 	getSnapbackMCPConfig,
 	removeSnapbackConfig,
+	repairClientConfig,
+	validateClientConfig,
 	validateConfig,
 	writeClientConfig,
 } from "@snapback/mcp-config";
@@ -70,6 +72,7 @@ export function createMcpCommand() {
 	// ==========================================================================
 	cmd.option("--stdio", "Use stdio transport (default)")
 		.option("--ws <path>", "Workspace root path (auto-resolved if not provided)")
+		.option("--workspace <path>", "Alias for --ws (workspace root path)")
 		.option(
 			"--tier <tier>",
 			"Override user tier (free|pro|enterprise). Auto-detected from SNAPBACK_API_KEY or SNAPBACK_TIER env var.",
@@ -78,7 +81,9 @@ export function createMcpCommand() {
 			// If --stdio is set, run the MCP server
 			if (options.stdio) {
 				try {
-					const workspaceValidation = resolveWorkspaceRoot(options.ws);
+					// Support both --ws and --workspace for compatibility
+					const workspacePath = options.ws || options.workspace;
+					const workspaceValidation = resolveWorkspaceRoot(workspacePath);
 
 					if (!workspaceValidation.valid) {
 						console.error(`[SnapBack MCP] Workspace validation failed: ${workspaceValidation.error}`);
@@ -329,6 +334,129 @@ export function createMcpCommand() {
 					chalk.red("Fix conflicts failed:"),
 					error instanceof Error ? error.message : String(error),
 				);
+				process.exit(1);
+			}
+		});
+
+	// ==========================================================================
+	// snap mcp repair - Repair stale/broken MCP configurations
+	// ==========================================================================
+	cmd.command("repair")
+		.description("Repair stale or broken MCP configurations (escape hatch for multi-client issues)")
+		.option("--client <client>", "Target client to repair (claude, cursor, qoder, etc.)")
+		.option("--all", "Repair all detected clients", false)
+		.option("--force", "Force complete reconfiguration", false)
+		.option("--workspace <path>", "Workspace root path")
+		.action(async (options) => {
+			try {
+				const workspaceValidation = resolveWorkspaceRoot(options.workspace);
+				const workspaceRoot = workspaceValidation.valid ? workspaceValidation.root : process.cwd();
+
+				let clientsToRepair: AIClientConfig[] = [];
+
+				if (options.all) {
+					// Repair all detected clients with SnapBack
+					const detection = detectAIClients({ cwd: workspaceRoot });
+					clientsToRepair = detection.detected.filter((c) => c.hasSnapback);
+
+					if (clientsToRepair.length === 0) {
+						console.log(chalk.yellow("No clients with SnapBack configured found."));
+						console.log(chalk.gray("Run: snap mcp link --client <name>"));
+						return;
+					}
+				} else if (options.client) {
+					const clientName = options.client.toLowerCase() as AIClientFormat;
+					const client = getClient(clientName);
+
+					if (!client) {
+						console.error(
+							chalk.red(`Unknown client: ${options.client}`),
+							chalk.gray("\nSupported: claude, cursor, qoder, windsurf, vscode, cline, zed, continue"),
+						);
+						process.exit(1);
+					}
+
+					clientsToRepair = [client];
+				} else {
+					// Show validation status for all clients
+					const detection = detectAIClients({ cwd: workspaceRoot });
+					const configuredClients = detection.detected.filter((c) => c.hasSnapback);
+
+					console.log(chalk.bold("\n🔧 MCP Configuration Validation\n"));
+
+					let hasIssues = false;
+					for (const client of configuredClients) {
+						const validation = validateClientConfig(client);
+						const errors = validation.issues.filter((i) => i.severity === "error");
+						const warnings = validation.issues.filter((i) => i.severity === "warning");
+
+						if (errors.length > 0) {
+							console.log(chalk.red(`✗ ${client.displayName}: ${errors.length} error(s)`));
+							for (const err of errors) {
+								console.log(chalk.gray(`    - ${err.message}`));
+								if (err.fix) {
+									console.log(chalk.gray(`      Fix: ${err.fix}`));
+								}
+							}
+							hasIssues = true;
+						} else if (warnings.length > 0) {
+							console.log(chalk.yellow(`⚠ ${client.displayName}: ${warnings.length} warning(s)`));
+							for (const warn of warnings) {
+								console.log(chalk.gray(`    - ${warn.message}`));
+							}
+						} else {
+							console.log(chalk.green(`✓ ${client.displayName}: Valid`));
+						}
+					}
+
+					if (hasIssues) {
+						console.log(chalk.cyan("\nTo repair all clients, run:"));
+						console.log(chalk.gray("  snap mcp repair --all\n"));
+					} else {
+						console.log(chalk.green("\n✓ All configurations are valid\n"));
+					}
+					return;
+				}
+
+				// Perform repairs
+				console.log(chalk.bold("\n🔧 Repairing MCP Configurations\n"));
+
+				let repairCount = 0;
+				for (const client of clientsToRepair) {
+					console.log(chalk.cyan(`Repairing ${client.displayName}...`));
+
+					const result = repairClientConfig(client, {
+						workspaceRoot,
+						force: options.force,
+					});
+
+					if (result.success) {
+						console.log(chalk.green(`  ✓ ${client.displayName} repaired`));
+						if (result.fixed.length > 0) {
+							for (const fix of result.fixed) {
+								console.log(chalk.gray(`    - ${fix}`));
+							}
+						}
+						repairCount++;
+					} else {
+						console.log(chalk.red(`  ✗ ${client.displayName} repair failed`));
+						if (result.error) {
+							console.log(chalk.gray(`    Error: ${result.error}`));
+						}
+						for (const remaining of result.remaining) {
+							console.log(chalk.gray(`    - ${remaining}`));
+						}
+					}
+				}
+
+				if (repairCount > 0) {
+					console.log(chalk.green(`\n✓ Repaired ${repairCount}/${clientsToRepair.length} client(s)`));
+					console.log(chalk.gray("  Restart your IDE/editor to apply changes\n"));
+				} else {
+					console.log(chalk.yellow("\n⚠ No clients were repaired. Try --force to reconfigure completely.\n"));
+				}
+			} catch (error) {
+				console.error(chalk.red("Repair failed:"), error instanceof Error ? error.message : String(error));
 				process.exit(1);
 			}
 		});

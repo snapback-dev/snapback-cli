@@ -1581,7 +1581,7 @@ export class SnapBackDaemon extends EventEmitter {
 				restored: result.success && !dryRun,
 				filesRestored: result.restoredFiles.length,
 				dryRun: !!dryRun,
-				changes: result.restoredFiles.map((f) => ({ file: f, action: "restore" })),
+				changes: result.restoredFiles.map((f: string) => ({ file: f, action: "restore" })),
 				errors: result.errors,
 			};
 		} catch (err) {
