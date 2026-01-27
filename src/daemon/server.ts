@@ -964,6 +964,9 @@ export class SnapBackDaemon extends EventEmitter {
 			case "learning.updateSession":
 				return this.handleLearningUpdateSession(params, requestId);
 
+			case "learning.gc":
+				return this.handleLearningGC(params, requestId);
+
 			case "context.get":
 				return this.handleContextGet(params, requestId);
 
@@ -2364,6 +2367,75 @@ export class SnapBackDaemon extends EventEmitter {
 				sessionId,
 				updatedCount: 0,
 			};
+		}
+	}
+
+	/**
+	 * Phase 2.6b: Learning garbage collection (archive/delete)
+	 */
+	private async handleLearningGC(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, operation, dryRun } = params as {
+			workspace: string;
+			operation?: "archive" | "delete" | "all";
+			dryRun?: boolean;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		const op = operation || "archive"; // Default to archive only
+		const isDryRun = dryRun ?? true; // Default to dry-run for safety
+
+		const startTime = performance.now();
+
+		try {
+			const { AutomatedLearningPruner } = await import("../services/learning-pruner.js");
+
+			const pruner = new AutomatedLearningPruner({
+				workspaceRoot: workspace,
+				dryRun: isDryRun,
+				maxAgeDays: 90,
+				minUsageCount: 3,
+			});
+
+			await pruner.initialize();
+
+			const results: Record<string, unknown> = {};
+
+			if (op === "archive" || op === "all") {
+				const archiveResult = await pruner.archiveStaleItems();
+				results.archive = archiveResult;
+			}
+
+			if (op === "delete" || op === "all") {
+				const deleteResult = await pruner.deletePermanentlyArchived();
+				results.delete = deleteResult;
+			}
+
+			const durationMs = performance.now() - startTime;
+
+			this.logger.info("Learning GC completed", {
+				requestId,
+				workspace,
+				operation: op,
+				dryRun: isDryRun,
+				durationMs: Number(durationMs.toFixed(2)),
+			});
+
+			return results;
+		} catch (err) {
+			const durationMs = performance.now() - startTime;
+
+			this.logger.error("Learning GC failed", {
+				requestId,
+				workspace,
+				operation: op,
+				error: err instanceof Error ? err.message : String(err),
+				durationMs: Number(durationMs.toFixed(2)),
+			});
+
+			throw new InternalError(`Learning GC failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 

@@ -95,9 +95,7 @@ describe("AutomatedLearningPruner", () => {
 				`
 try {
   doSomething();
-} catch (e) {
-  // empty catch block
-}
+} catch (e) {}
 			`,
 			);
 
@@ -124,7 +122,7 @@ try {
 			const result = await pruner.pruneStaleViolations();
 
 			expect(result.totalChecked).toBe(1);
-			expect(result.staleCount).toBe(0); // Pattern still exists
+			expect(result.staleCount).toBe(0); // Pattern still exists (truly empty catch)
 		});
 
 		it("should archive violations when not in dry-run mode", async () => {

@@ -162,9 +162,13 @@ export class AutomatedLearningPruner {
 			const archivePath = await this.archiveViolations(staleViolations);
 			archivedFiles.push(archivePath);
 
-			// Remove from state (will be persisted on next save)
-			// Note: StateStore doesn't have removeViolation yet, will need to add
-			// For now, just track what would be archived
+			// Remove violations from StateStore
+			for (const violation of staleViolations) {
+				this.stateStore.removeViolation(violation.id);
+			}
+
+			// Persist changes
+			await this.stateStore.save();
 		}
 
 		return {
@@ -206,8 +210,10 @@ export class AutomatedLearningPruner {
 			// Final score
 			const newScore = Math.max(0, Math.min(1, ageScore + useScore));
 
-			// Update if changed
-			if (Math.abs(newScore - (learning.relevanceScore ?? 1.0)) > 0.01) {
+			// Always update score (even if similar to existing)
+			// This ensures scores are recalculated based on current config
+			const currentScore = learning.relevanceScore ?? 1.0;
+			if (Math.abs(newScore - currentScore) > 0.001 || currentScore === 1.0) {
 				this.stateStore.updateLearning(learning.id, { relevanceScore: newScore });
 				updatedCount++;
 			}
@@ -306,35 +312,35 @@ export class AutomatedLearningPruner {
 	 */
 	async archiveStaleItems(): Promise<ArchiveResult> {
 		const learnings = this.stateStore.getLearnings();
-	
+
 		const staleLearnings: StoredLearning[] = [];
 		const now = Date.now();
-	
+
 		// Phase 1: Identify archive candidates (30d unused, <3 usage)
 		for (const learning of learnings) {
 			// Skip already archived
 			if (learning.archived) {
 				continue;
 			}
-	
+
 			const score = learning.relevanceScore ?? 1.0;
 			const createdAt = new Date(learning.createdAt).getTime();
 			const daysSinceCreated = (now - createdAt) / (1000 * 60 * 60 * 24);
 			const usageCount = (learning.accessCount || 0) + (learning.appliedCount || 0);
-	
+
 			// Archive if low confidence OR (old + unused)
 			if (score < 0.3 || (daysSinceCreated > this.config.maxAgeDays && usageCount === 0)) {
 				staleLearnings.push(learning);
 			}
 		}
-	
+
 		const archiveDir = join(this.config.workspaceRoot, this.config.archiveDir);
 		let archivedLearnings = 0;
 		const archivedViolations = 0;
-	
+
 		if (!this.config.dryRun && staleLearnings.length > 0) {
 			await mkdir(archiveDir, { recursive: true });
-	
+
 			// USE STATESTORE FLAGS (Phase 2.6b consolidation)
 			for (const learning of staleLearnings) {
 				const success = this.stateStore.archiveLearning(learning.id);
@@ -342,22 +348,22 @@ export class AutomatedLearningPruner {
 					archivedLearnings++;
 				}
 			}
-	
+
 			// Fallback: Also write to file for backup/migration (legacy support)
 			if (staleLearnings.length > 0) {
 				const archivePath = join(archiveDir, `learnings_${Date.now()}.jsonl`);
 				const content = staleLearnings.map((l) => JSON.stringify(l)).join("\n");
 				await writeFile(archivePath, content, "utf-8");
 			}
-	
+
 			// Persist StateStore changes
 			if (archivedLearnings > 0) {
 				await this.stateStore.save();
 			}
-	
+
 			// Note: Violations are handled by pruneStaleViolations()
 		}
-	
+
 		return {
 			archived: {
 				learnings: this.config.dryRun ? staleLearnings.length : archivedLearnings,
@@ -367,7 +373,7 @@ export class AutomatedLearningPruner {
 			dryRun: this.config.dryRun,
 		};
 	}
-	
+
 	/**
 	 * Delete permanently archived learnings (Phase 2 of two-phase decay)
 	 *
@@ -381,24 +387,24 @@ export class AutomatedLearningPruner {
 		const learnings = this.stateStore.getLearnings();
 		const now = Date.now();
 		const deleteThresholdDays = 90; // Fixed: 90 days after archival
-	
+
 		const deleteCandidates: StoredLearning[] = [];
-	
+
 		for (const learning of learnings) {
 			if (!learning.archived || !learning.archivedAt) {
 				continue;
 			}
-	
+
 			const archivedAt = new Date(learning.archivedAt).getTime();
 			const daysSinceArchived = (now - archivedAt) / (1000 * 60 * 60 * 24);
-	
+
 			if (daysSinceArchived > deleteThresholdDays) {
 				deleteCandidates.push(learning);
 			}
 		}
-	
+
 		let deletedCount = 0;
-	
+
 		if (!this.config.dryRun && deleteCandidates.length > 0) {
 			for (const learning of deleteCandidates) {
 				const success = this.stateStore.deleteLearning(learning.id);
@@ -406,13 +412,13 @@ export class AutomatedLearningPruner {
 					deletedCount++;
 				}
 			}
-	
+
 			// Persist StateStore changes
 			if (deletedCount > 0) {
 				await this.stateStore.save();
 			}
 		}
-	
+
 		return {
 			deletedCount: this.config.dryRun ? deleteCandidates.length : deletedCount,
 			dryRun: this.config.dryRun,
@@ -515,12 +521,12 @@ export class AutomatedLearningPruner {
 		const aText = `${a.trigger} ${a.action}`.toLowerCase();
 		const bText = `${b.trigger} ${b.action}`.toLowerCase();
 
-		// Simple similarity: check for 80% overlap
+		// Simple similarity: check for 60% overlap (lowered for fuzzy matching of similar learnings)
 		const distance = this.levenshteinDistance(aText, bText);
 		const maxLen = Math.max(aText.length, bText.length);
 		const similarity = 1 - distance / maxLen;
 
-		return similarity >= 0.8;
+		return similarity >= 0.6;
 	}
 
 	/**
