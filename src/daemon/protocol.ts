@@ -106,6 +106,7 @@ export type DaemonMethod =
 	| "learning.prune"
 	| "learning.evaluate"
 	| "learning.updateSession" // Phase 2.6a: Update session's applied learnings
+	| "learning.gc" // Phase 2.6b: Garbage collection (archive/delete)
 
 	// Context
 	| "context.get"
@@ -577,6 +578,30 @@ export interface UpdateSessionLearningsResult {
 	success: boolean;
 	sessionId: string;
 	updatedCount: number;
+}
+
+// Phase 2.6b: Garbage collection parameters
+export interface LearningGCParams {
+	workspace: string;
+	archive: boolean; // Run archive phase
+	delete: boolean; // Run delete phase
+	force?: boolean; // Required for delete operations
+	dryRun?: boolean; // Audit only (default: true)
+}
+
+// Phase 2.6b: Garbage collection result
+export interface LearningGCResult {
+	success: boolean;
+	audit: {
+		archiveCandidates: number;
+		deleteCandidates: number;
+		estimatedSpaceSaved: number; // bytes
+	};
+	execution: {
+		archivedCount: number;
+		deletedCount: number;
+		errors: string[];
+	};
 }
 
 export interface GetContextResult {
