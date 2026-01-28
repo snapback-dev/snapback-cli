@@ -24,7 +24,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { platform } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { createRuntimeContext, type ISnapshotStorage, LocalEngineAdapter, RuntimeRouter } from "@snapback/core/runtime";
-import { Intelligence } from "@snapback/intelligence";
+import { Intelligence, StateStore, SyncWorker } from "@snapback/intelligence";
 import { LocalStorage, ProtectionManager, SnapshotManager } from "@snapback/sdk";
 import { AutomatedLearningPruner } from "../services/learning-pruner.js";
 
@@ -276,6 +276,62 @@ function getLearningPruner(workspaceRoot: string): AutomatedLearningPruner {
 }
 
 // =============================================================================
+// SYNC WORKER SINGLETON (Cross-Device Intelligence Sync)
+// =============================================================================
+
+/**
+ * SyncWorker instances per workspace (singleton pattern for background sync)
+ * Per inteligence_new_platform spec: Wire SyncWorker into daemon lifecycle
+ */
+const syncWorkerInstances = new Map<string, SyncWorker>();
+
+/**
+ * Get or create SyncWorker instance for a workspace.
+ * Enables background sync of learnings/patterns to platform.
+ */
+async function getSyncWorker(workspaceRoot: string, userId: string): Promise<SyncWorker> {
+	const key = `${workspaceRoot}:${userId}`;
+	if (!syncWorkerInstances.has(key)) {
+		// Create StateStore first
+		const snapbackDir = join(workspaceRoot, ".snapback");
+		const store = new StateStore({ snapbackDir });
+		await store.load();
+
+		// Create SyncWorker with workspace and user context
+		const worker = new SyncWorker(store, {
+			userId,
+			workspaceId: workspaceRoot,
+			syncInterval: 30000, // 30s default
+			maxRetries: 3,
+			baseDelay: 1000,
+			maxDelay: 30000,
+		});
+
+		await worker.init();
+		syncWorkerInstances.set(key, worker);
+	}
+	const instance = syncWorkerInstances.get(key);
+	if (!instance) {
+		throw new Error(`SyncWorker instance not found for workspace: ${workspaceRoot}`);
+	}
+	return instance;
+}
+
+/**
+ * Stop all SyncWorker instances (called during daemon shutdown)
+ */
+async function stopAllSyncWorkers(): Promise<void> {
+	for (const [_key, worker] of syncWorkerInstances) {
+		try {
+			worker.stop();
+		} catch {
+			// Ignore errors during shutdown
+		}
+	}
+	syncWorkerInstances.clear();
+}
+
+// =============================================================================
 // CONFIGURATION
 // =============================================================================
 
@@ -488,6 +544,9 @@ export class SnapBackDaemon extends EventEmitter {
 			clearTimeout(this.pruningTimer);
 			this.pruningTimer = null;
 		}
+
+		// Stop all SyncWorker instances
+		await stopAllSyncWorkers();
 
 		// Close all connections gracefully
 		for (const [socket, _ctx] of this.connections) {
@@ -1103,6 +1162,16 @@ export class SnapBackDaemon extends EventEmitter {
 
 		// Get Intelligence instance for cross-surface coordination
 		const intel = getIntelligence(workspace);
+
+		// Start SyncWorker for this workspace (enables background sync)
+		// Uses placeholder userId - real auth integration TODO
+		try {
+			const syncWorker = await getSyncWorker(workspace, "daemon-user");
+			syncWorker.start();
+		} catch {
+			// SyncWorker failure is non-fatal, continue without sync
+			this.logger.warn("Failed to start SyncWorker for workspace", { workspace });
+		}
 
 		// Start Intelligence session with same task ID (enables Extension, MCP, CLI to share state)
 		intel.startSession(taskId, {
