@@ -1,5 +1,14 @@
 # @snapback/cli
 
+## 1.1.14
+
+### Patch Changes
+
+- docs: Updated README with professional hero banner
+- docs: Fixed GitHub repository URLs to point to snapback-cli repo
+- docs: Fixed Discord invite link
+- chore: Added .npmignore and .gitattributes for clean package publishing
+
 ## 0.2.1
 
 ### Patch Changes
