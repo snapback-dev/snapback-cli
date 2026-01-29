@@ -11,10 +11,12 @@
 // =============================================================================
 
 /**
- * Default idle timeout in milliseconds (15 minutes)
- * Daemon will shutdown after this period of inactivity
+ * Default idle timeout in milliseconds (8 hours = 28,800,000ms)
+ * Daemon will shutdown after this period of inactivity.
+ * Extended from 15 minutes to 8 hours to cover a full workday,
+ * preventing premature shutdown during development sessions.
  */
-export const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+export const DEFAULT_IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours × 60 min × 60 sec × 1000 ms
 
 /**
  * Default request timeout in milliseconds (30 seconds)

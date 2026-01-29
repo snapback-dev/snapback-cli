@@ -23,9 +23,10 @@ const LOCK_FILE = "daemon.lock";
 const LOG_FILE = "daemon.log";
 
 /**
- * Default idle timeout in milliseconds (15 minutes)
+ * Default idle timeout in milliseconds (8 hours = 28,800,000ms)
+ * Extended from 15 minutes to cover a full workday.
  */
-export const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+export const DEFAULT_IDLE_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 /**
  * Maximum connections allowed
