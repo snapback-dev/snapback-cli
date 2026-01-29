@@ -1,10 +1,10 @@
-# @snapback/cli
-
-> **Git is for commits. SnapBack is for "oh no, what did I just do?"**
+<p align="center">
+  <img src="../../brand/github/github-cli.png" alt="SnapBack CLI - The command-line interface for effortless restores and snapshots" />
+</p>
 
 [![npm version](https://img.shields.io/npm/v/@snapback/cli.svg)](https://www.npmjs.com/package/@snapback/cli)
 [![npm downloads](https://img.shields.io/npm/dm/@snapback/cli.svg)](https://www.npmjs.com/package/@snapback/cli)
-[![License](https://img.shields.io/npm/l/@snapback/cli.svg)](https://github.com/snapback-dev/snapback/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/@snapback/cli.svg)](https://github.com/snapback-dev/snapback-cli/blob/main/LICENSE)
 
 AI coding assistants like **Cursor**, **GitHub Copilot**, and **Claude** are incredible—until they're not. One wrong autocomplete can cascade into hours of debugging. Git doesn't help because you haven't committed yet.
 
@@ -38,12 +38,12 @@ SnapBack has two primary interfaces:
 The extension provides the best experience with automatic snapshots, visual recovery UI, and real-time risk indicators.
 
 ```
-ext install snapback-vscode
+ext install MarcelleLabs.snapback-vscode
 ```
 
 Or search "SnapBack" in the VS Code Extensions marketplace.
 
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/snapback.snapback-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=snapback.snapback-vscode)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/MarcelleLabs.snapback-vscode.svg)](https://marketplace.visualstudio.com/items?itemName=MarcelleLabs.snapback-vscode)
 
 ### 💻 CLI Tool
 
@@ -572,7 +572,7 @@ $ snap doctor
 
 | Package | Description |
 |---------|-------------|
-| [snapback-vscode](https://marketplace.visualstudio.com/items?itemName=snapback.snapback-vscode) | VS Code extension with visual UI |
+| [MarcelleLabs.snapback-vscode](https://marketplace.visualstudio.com/items?itemName=MarcelleLabs.snapback-vscode) | VS Code extension with visual UI |
 
 ---
 
@@ -586,7 +586,7 @@ Unlock Pro features like checkpoint creation and restoration:
 
 ## License
 
-[Apache-2.0](https://github.com/snapback-dev/snapback/blob/main/LICENSE)
+[Apache-2.0](https://github.com/snapback-dev/snapback-cli/blob/main/LICENSE)
 
 ---
 
@@ -595,5 +595,5 @@ Unlock Pro features like checkpoint creation and restoration:
   <a href="https://snapback.dev">Website</a> ·
   <a href="https://docs.snapback.dev">Docs</a> ·
   <a href="https://console.snapback.dev">Dashboard</a> ·
-  <a href="https://discord.gg/snapback">Discord</a>
+  <a href="https://discord.gg/B4BXeYkE2F">Discord</a>
 </p>
