@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../../brand/github/github-cli.png" alt="SnapBack CLI - The command-line interface for effortless restores and snapshots" />
+  <img src="./assets/github-cli.png" alt="SnapBack CLI - The command-line interface for effortless restores and snapshots" />
 </p>
 
 [![npm version](https://img.shields.io/npm/v/@snapback/cli.svg)](https://www.npmjs.com/package/@snapback/cli)
