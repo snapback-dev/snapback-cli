@@ -979,6 +979,9 @@ export class SnapBackDaemon extends EventEmitter {
 			case "session.changes":
 				return this.handleSessionChanges(params, requestId);
 
+			case "session.review":
+				return this.handleSessionReview(params, requestId);
+
 			case "snapshot.create":
 				return this.handleSnapshotCreate(params, requestId);
 
@@ -1026,8 +1029,30 @@ export class SnapBackDaemon extends EventEmitter {
 			case "learning.gc":
 				return this.handleLearningGC(params, requestId);
 
+			// Sync methods (Intelligence Layer Platform Sync)
+			case "sync.status":
+				return this.handleSyncStatus(params, requestId);
+
+			case "sync.force":
+				return this.handleSyncForce(params, requestId);
+
+			case "sync.stop":
+				return this.handleSyncStop(params, requestId);
+
+			case "sync.start":
+				return this.handleSyncStart(params, requestId);
+
+			case "sync.queue":
+				return this.handleSyncQueue(params, requestId);
+
 			case "context.get":
 				return this.handleContextGet(params, requestId);
+
+			case "context.validate":
+				return this.handleContextValidate(params, requestId);
+
+			case "context.check_patterns":
+				return this.handleContextCheckPatterns(params, requestId);
 
 			case "validate.quick":
 				return this.handleValidateQuick(params, requestId);
@@ -2508,6 +2533,184 @@ export class SnapBackDaemon extends EventEmitter {
 		}
 	}
 
+	// =========================================================================
+	// SYNC HANDLERS (Intelligence Layer Platform Sync)
+	// =========================================================================
+
+	/**
+	 * Handle sync.status - Get sync status for a workspace
+	 */
+	private async handleSyncStatus(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as { workspace: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const key = `${workspace}:daemon-user`;
+			const worker = syncWorkerInstances.get(key);
+
+			if (!worker) {
+				return {
+					status: "offline",
+					lastSyncedAt: null,
+					pendingChanges: 0,
+					isAuthenticated: false,
+					tier: "free",
+				};
+			}
+
+			// Get sync status from worker
+			const isRunning = (worker as any).isRunning || false;
+			const queueLength = (worker as any).queue?.length || 0;
+
+			return {
+				status: isRunning ? "connected" : "offline",
+				lastSyncedAt: null, // TODO: Get from StateStore
+				pendingChanges: queueLength,
+				isAuthenticated: false, // TODO: Check auth state
+				tier: "free", // TODO: Get from context
+			};
+		} catch (err) {
+			this.logger.error("Failed to get sync status", { requestId, workspace, error: String(err) });
+			return {
+				status: "error",
+				lastSyncedAt: null,
+				pendingChanges: 0,
+				errorMessage: err instanceof Error ? err.message : String(err),
+				isAuthenticated: false,
+				tier: "free",
+			};
+		}
+	}
+
+	/**
+	 * Handle sync.force - Force immediate sync to platform
+	 */
+	private async handleSyncForce(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as { workspace: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const worker = await getSyncWorker(workspace, "daemon-user");
+
+			// Trigger sync
+			await (worker as any).syncIfDirty?.();
+
+			this.logger.info("Forced sync completed", { requestId, workspace });
+
+			return {
+				success: true,
+				syncedItems: 0, // TODO: Return actual count
+			};
+		} catch (err) {
+			this.logger.error("Force sync failed", { requestId, workspace, error: String(err) });
+			return {
+				success: false,
+				syncedItems: 0,
+				errorMessage: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
+	/**
+	 * Handle sync.stop - Stop sync worker for a workspace
+	 */
+	private async handleSyncStop(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as { workspace: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const key = `${workspace}:daemon-user`;
+			const worker = syncWorkerInstances.get(key);
+
+			if (worker) {
+				worker.stop();
+				this.logger.info("Sync worker stopped", { requestId, workspace });
+			}
+
+			return { stopped: true };
+		} catch (err) {
+			this.logger.error("Failed to stop sync worker", { requestId, workspace, error: String(err) });
+			return { stopped: false };
+		}
+	}
+
+	/**
+	 * Handle sync.start - Start sync worker for a workspace
+	 */
+	private async handleSyncStart(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, authToken } = params as { workspace: string; authToken?: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const worker = await getSyncWorker(workspace, "daemon-user");
+
+			// Store auth token if provided (for platform sync)
+			if (authToken) {
+				(worker as any).authToken = authToken;
+			}
+
+			worker.start();
+			this.logger.info("Sync worker started", { requestId, workspace });
+
+			return { started: true };
+		} catch (err) {
+			this.logger.error("Failed to start sync worker", { requestId, workspace, error: String(err) });
+			return {
+				started: false,
+				errorMessage: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
+	/**
+	 * Handle sync.queue - Get pending sync operations
+	 */
+	private async handleSyncQueue(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as { workspace: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		try {
+			const key = `${workspace}:daemon-user`;
+			const worker = syncWorkerInstances.get(key);
+
+			if (!worker) {
+				return { pending: 0, items: [] };
+			}
+
+			// Get queue from worker (accessing private member)
+			const queue = (worker as any).queue || [];
+
+			return {
+				pending: queue.length,
+				items: queue.map((item: any) => ({
+					id: item.id,
+					type: item.type,
+					action: item.action,
+					timestamp: item.timestamp,
+					retries: item.retries || 0,
+				})),
+			};
+		} catch (err) {
+			this.logger.error("Failed to get sync queue", { requestId, workspace, error: String(err) });
+			return { pending: 0, items: [] };
+		}
+	}
+
 	private async handleContextGet(params: Record<string, unknown>, requestId: string): Promise<unknown> {
 		const { workspace, task, files, keywords } = params as {
 			workspace: string;
@@ -2632,6 +2835,194 @@ export class SnapBackDaemon extends EventEmitter {
 				recommendations,
 			},
 		};
+	}
+
+	/**
+	 * Handle context.validate - Validate code against patterns
+	 * Wraps Intelligence.checkPatterns() for cross-surface pattern validation
+	 */
+	private async handleContextValidate(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace, code, filePath } = params as {
+			workspace: string;
+			code: string;
+			filePath: string;
+		};
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+		if (!code || typeof code !== "string") {
+			throw new InvalidParamsError("code is required");
+		}
+		if (!filePath || typeof filePath !== "string") {
+			throw new InvalidParamsError("filePath is required");
+		}
+
+		// Validate file path
+		validatePath(workspace, filePath);
+
+		try {
+			const intel = getIntelligence(workspace);
+
+			// Run full 7-layer validation via Intelligence
+			const validation = await intel.checkPatterns(code, filePath);
+
+			this.logger.debug("Context validation completed", {
+				requestId,
+				workspace,
+				filePath,
+				passed: validation.overall.passed,
+				totalIssues: validation.overall.totalIssues,
+			});
+
+			return {
+				passed: validation.overall.passed,
+				confidence: validation.overall.confidence,
+				totalIssues: validation.overall.totalIssues,
+				recommendation: validation.recommendation,
+				layers: validation.layers.map((l) => ({
+					name: l.layer,
+					passed: l.passed,
+					issueCount: l.issues.length,
+					issues: l.issues.map((i) => ({
+						severity: i.severity,
+						type: i.type,
+						message: i.message,
+						line: i.line,
+						fix: i.fix,
+					})),
+					duration: l.duration,
+				})),
+				focusPoints: validation.focusPoints,
+			};
+		} catch (err) {
+			this.logger.error("Context validation failed", {
+				requestId,
+				workspace,
+				filePath,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			throw new InternalError(`Validation failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	/**
+	 * Handle context.check_patterns - Check code against patterns (alias for context.validate)
+	 * Provides consistent API with MCP server implementation
+	 */
+	private async handleContextCheckPatterns(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		// Delegate to handleContextValidate for consistent behavior
+		return this.handleContextValidate(params, requestId);
+	}
+
+	/**
+	 * Handle session.review - Review active session with learnings and recommendations
+	 * Returns session summary for cross-surface coordination
+	 */
+	private async handleSessionReview(params: Record<string, unknown>, requestId: string): Promise<unknown> {
+		const { workspace } = params as { workspace: string };
+
+		if (!workspace || typeof workspace !== "string") {
+			throw new InvalidParamsError("workspace is required");
+		}
+
+		const ctx = this.workspaces.get(workspace);
+		if (!ctx) {
+			throw new WorkspaceNotFoundError(workspace);
+		}
+
+		if (!ctx.sessionActive || !ctx.currentTaskId) {
+			return {
+				active: false,
+				message: "No active session to review",
+			};
+		}
+
+		try {
+			const intel = getIntelligence(workspace);
+			const sessionStartedAt = ctx.sessionStartedAt || ctx.lastActivity;
+			const duration = Date.now() - sessionStartedAt;
+
+			// Get file modifications from Intelligence
+			const modifications = intel.getFileModifications(ctx.currentTaskId, sessionStartedAt);
+			const filesModified = modifications.length;
+			const linesChanged = modifications.reduce((sum, m) => sum + m.linesChanged, 0);
+
+			// Get learnings relevant to this session
+			const learnings = intel.queryLearnings(["session", "review"]).slice(0, 5);
+
+			// Get session analytics from Intelligence
+			const sessionData = intel.getSessionAnalytics(ctx.currentTaskId);
+
+			// Build recommendations based on session state
+			const recommendations: string[] = [];
+			if (filesModified > 5) {
+				recommendations.push("Consider creating a snapshot before continuing");
+			}
+			if (linesChanged > 500) {
+				recommendations.push("Large change detected - review carefully before committing");
+			}
+			if (duration > 3600000) {
+				// > 1 hour
+				recommendations.push("Long session - consider ending and starting fresh");
+			}
+
+			// Assess risk based on modifications
+			const criticalPatterns = ["auth", "payment", "security", "config", "migration", "env"];
+			const hasCriticalFiles = modifications.some((m) =>
+				criticalPatterns.some((pattern) => m.path.toLowerCase().includes(pattern)),
+			);
+			const riskLevel: "low" | "medium" | "high" = hasCriticalFiles
+				? linesChanged > 200
+					? "high"
+					: "medium"
+				: linesChanged > 500
+					? "medium"
+					: "low";
+
+			this.logger.info("Session reviewed", {
+				requestId,
+				workspace,
+				taskId: ctx.currentTaskId,
+				filesModified,
+				linesChanged,
+				riskLevel,
+			});
+
+			return {
+				active: true,
+				taskId: ctx.currentTaskId,
+				task: sessionData?.uniqueTools.join(", ") || "Unknown task",
+				duration,
+				summary: {
+					filesModified,
+					linesChanged,
+					riskLevel,
+					snapshotCount: ctx.snapshotCount,
+				},
+				learnings: learnings.map((l) => ({
+					type: l.type,
+					trigger: Array.isArray(l.trigger) ? l.trigger.join(", ") : l.trigger,
+					action: l.action,
+				})),
+				recommendations,
+				files: modifications.map((m) => ({
+					path: m.path,
+					type: m.type,
+					linesChanged: m.linesChanged,
+					aiAttributed: m.aiAttributed,
+				})),
+			};
+		} catch (err) {
+			this.logger.error("Session review failed", {
+				requestId,
+				workspace,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			throw new InternalError(`Session review failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
 	private async handleValidateQuick(params: Record<string, unknown>, _requestId: string): Promise<unknown> {

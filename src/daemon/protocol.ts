@@ -108,6 +108,13 @@ export type DaemonMethod =
 	| "learning.updateSession" // Phase 2.6a: Update session's applied learnings
 	| "learning.gc" // Phase 2.6b: Garbage collection (archive/delete)
 
+	// Sync (Intelligence Layer Platform Sync)
+	| "sync.status" // Get sync status (connected, syncing, offline, error)
+	| "sync.force" // Force immediate sync to platform
+	| "sync.stop" // Stop sync worker
+	| "sync.start" // Start sync worker
+	| "sync.queue" // Get pending sync operations
+
 	// Context
 	| "context.get"
 	| "context.validate"
@@ -292,6 +299,66 @@ export interface UpdateSessionLearningsParams {
 	workspace: string;
 	sessionId: string;
 	learningIds: string[];
+}
+
+// =============================================================================
+// SYNC PARAMETERS AND RESULTS (Intelligence Layer Platform Sync)
+// =============================================================================
+
+export interface SyncStatusParams {
+	workspace: string;
+}
+
+export interface SyncStatusResult {
+	status: "connected" | "connecting" | "syncing" | "offline" | "error";
+	lastSyncedAt: string | null;
+	pendingChanges: number;
+	errorMessage?: string;
+	isAuthenticated: boolean;
+	tier: "free" | "pro" | "enterprise";
+}
+
+export interface SyncForceParams {
+	workspace: string;
+}
+
+export interface SyncForceResult {
+	success: boolean;
+	syncedItems: number;
+	errorMessage?: string;
+}
+
+export interface SyncStopParams {
+	workspace: string;
+}
+
+export interface SyncStopResult {
+	stopped: boolean;
+}
+
+export interface SyncStartParams {
+	workspace: string;
+	authToken?: string; // Optional auth token for platform sync
+}
+
+export interface SyncStartResult {
+	started: boolean;
+	errorMessage?: string;
+}
+
+export interface SyncQueueParams {
+	workspace: string;
+}
+
+export interface SyncQueueResult {
+	pending: number;
+	items: Array<{
+		id: string;
+		type: "learning" | "pattern" | "violation" | "session";
+		action: "create" | "update" | "delete";
+		timestamp: string;
+		retries: number;
+	}>;
 }
 
 export interface GetContextParams {
@@ -722,7 +789,8 @@ export type DaemonEventType =
 	| "session.ended"
 	| "learning.matched"
 	| "validation.failed"
-	| "daemon.shutting_down";
+	| "daemon.shutting_down"
+	| "sync.status_changed"; // Intelligence Layer sync status change
 
 export interface DaemonEvent {
 	type: DaemonEventType;
@@ -762,6 +830,18 @@ export interface SessionSavedEvent {
 		restoredFromDisaster?: boolean;
 		linesRecovered?: number;
 		timeAgo?: string;
+	};
+}
+
+export interface SyncStatusChangedEvent {
+	type: "sync.status_changed";
+	timestamp: number;
+	workspace: string;
+	data: {
+		previousStatus: "connected" | "connecting" | "syncing" | "offline" | "error";
+		newStatus: "connected" | "connecting" | "syncing" | "offline" | "error";
+		pendingChanges: number;
+		errorMessage?: string;
 	};
 }
 
